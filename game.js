@@ -782,9 +782,12 @@ const game = {
   // High scores (in-memory for sandbox, localStorage on Droplet)
   highScores: [],
   
-  // Attract mode
+  // Attract mode cycle: title(60s) -> demo(30s) -> scores(30s) -> repeat
   attractPhase: 0, // 0=title, 1=demo, 2=scores
   attractTimer: 0,
+  attractReturnTimer: 30, // gameover returns to attract after this
+  attractScoreTab: 0, // 0=daily, 1=weekly, 2=alltime
+  attractScoreTabTimer: 0,
   
   // Power score (adaptive difficulty)
   powerScore: 0,
@@ -911,21 +914,81 @@ function damagePlayer(amount) {
     SFX.gameOverDramatic();
     game.shakeTimer = 0.4;
     game.shakeIntensity = 8;
-    setTimeout(() => { game.state = 'gameover'; }, 1500);
+    setTimeout(() => { triggerGameEnd(); }, 1500);
   }
+}
+
+function triggerGameEnd() {
+  // Check if score qualifies for any leaderboard
+  const qualifies = checkScoreQualifies(game.player.score);
+  if (qualifies) {
+    startHighScoreEntry();
+  } else {
+    if (game.player.score > game.sessionHigh) game.sessionHigh = game.player.score;
+    game.state = 'gameover';
+    game.attractReturnTimer = 30; // return to attract after 30s idle
+  }
+}
+
+function checkScoreQualifies(score) {
+  if (score <= 0) return false;
+  // Always qualifies if fewer than 10 all-time scores
+  if (game.highScores.length < 10) return true;
+  // Qualifies if better than the worst all-time score
+  const worst = game.highScores[game.highScores.length - 1];
+  if (score > worst.score) return true;
+  // Also qualifies for daily/weekly if it would make those top 10
+  const now = Date.now();
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1); weekStart.setHours(0,0,0,0);
+  const dailyScores = game.highScores.filter(s => s.timestamp >= todayStart.getTime()).sort((a,b) => b.score - a.score);
+  const weeklyScores = game.highScores.filter(s => s.timestamp >= weekStart.getTime()).sort((a,b) => b.score - a.score);
+  if (dailyScores.length < 10 || score > dailyScores[dailyScores.length - 1].score) return true;
+  if (weeklyScores.length < 10 || score > weeklyScores[weeklyScores.length - 1].score) return true;
+  return false;
 }
 
 function drawPlayer(ctx) {
   const p = game.player;
   if (!p.alive) return;
   
-  // Invincibility flicker
-  if (p.iframes > 0 && Math.floor(p.iframes * 10) % 2 === 0) return;
-  
   ctx.save();
   ctx.translate(p.x, p.y);
   
-  // Simple humanoid sprite
+  // === ALWAYS-VISIBLE GLOW AURA (drawn even during iframes) ===
+  // Pulsing cyan ring that's visible in the densest chaos
+  const glowPulse = 0.35 + Math.sin(game.time * 5) * 0.15;
+  const glowSize = PLAYER_SIZE * 2.5 + Math.sin(game.time * 3) * 4;
+  // Outer glow ring
+  ctx.strokeStyle = C.player;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = glowPulse * 0.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, glowSize, 0, Math.PI * 2);
+  ctx.stroke();
+  // Inner bright circle
+  ctx.fillStyle = C.player;
+  ctx.globalAlpha = glowPulse * 0.12;
+  ctx.beginPath();
+  ctx.arc(0, 0, glowSize * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  // Directional indicator line extending from glow ring
+  ctx.strokeStyle = C.laserGlow;
+  ctx.lineWidth = 2;
+  ctx.globalAlpha = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(Math.cos(p.facing) * PLAYER_SIZE, Math.sin(p.facing) * PLAYER_SIZE);
+  ctx.lineTo(Math.cos(p.facing) * glowSize, Math.sin(p.facing) * glowSize);
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+  
+  // Invincibility flicker (skip drawing the sprite but glow stays)
+  if (p.iframes > 0 && Math.floor(p.iframes * 10) % 2 === 0) {
+    ctx.restore();
+    return;
+  }
+  
+  // Character sprite
   const s = PLAYER_SIZE;
   
   // Body
@@ -946,14 +1009,6 @@ function drawPlayer(ctx) {
   ctx.fillStyle = C.playerDark;
   ctx.fillRect(-s * 0.35, s * 0.2, s * 0.3, s * 0.5 + legOffset);
   ctx.fillRect(s * 0.05, s * 0.2, s * 0.3, s * 0.5 - legOffset);
-  
-  // Gun direction indicator
-  ctx.strokeStyle = C.laserGlow;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(Math.cos(p.facing) * s * 1.2, Math.sin(p.facing) * s * 1.2);
-  ctx.stroke();
   
   ctx.restore();
 }
@@ -1891,7 +1946,7 @@ function updateHumans(dt) {
       game.shakeTimer = 0.5;
       game.shakeIntensity = 8;
       SFX.gameOverDramatic();
-      setTimeout(() => { game.state = 'gameover'; }, 1500);
+      setTimeout(() => { triggerGameEnd(); }, 1500);
     }
     // Otherwise: wave ends normally (handled by updateWaveSystem detecting humans.length === 0)
   }
@@ -1968,6 +2023,36 @@ function drawHumans(ctx) {
     const s = h.size;
     const isPanic = h.panicTimer > 0;
     
+    // === ALWAYS-VISIBLE GREEN HIGHLIGHT ===
+    // Pulsing green glow ring so humans are never lost in chaos
+    const hGlow = 0.25 + Math.sin(game.time * 4 + h.x * 0.02) * 0.1;
+    const hGlowR = s * 1.6 + Math.sin(game.time * 3 + h.y * 0.01) * 3;
+    // Green ring
+    ctx.strokeStyle = '#44ff44';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = hGlow;
+    ctx.beginPath();
+    ctx.arc(0, -s * 0.2, hGlowR, 0, Math.PI * 2);
+    ctx.stroke();
+    // Soft green fill
+    ctx.fillStyle = '#44ff44';
+    ctx.globalAlpha = hGlow * 0.08;
+    ctx.beginPath();
+    ctx.arc(0, -s * 0.2, hGlowR * 0.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    
+    // Panic: additional bright flash ring
+    if (isPanic) {
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.3 + Math.sin(game.time * 10) * 0.3;
+      ctx.beginPath();
+      ctx.arc(0, -s * 0.2, hGlowR * 1.2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+    
     // Flash when panicking
     if (isPanic && Math.floor(h.panicTimer * 8) % 2 === 0) {
       ctx.fillStyle = '#ffffff';
@@ -1984,8 +2069,6 @@ function drawHumans(ctx) {
     ctx.fillRect(-s * 0.3, -s * 0.6, s * 0.6, s * 0.7);
     // Arms
     if (isPanic) {
-      // Waving arms — panic!
-      const armAngle = Math.sin(h.animTimer * 12) * 0.5;
       ctx.fillRect(-s * 0.55, -s * 0.5 + Math.sin(h.animTimer * 10) * 3, s * 0.2, s * 0.4);
       ctx.fillRect(s * 0.35, -s * 0.5 - Math.sin(h.animTimer * 10) * 3, s * 0.2, s * 0.4);
     } else {
@@ -1997,6 +2080,17 @@ function drawHumans(ctx) {
     ctx.fillStyle = darkColor;
     ctx.fillRect(-s * 0.25, s * 0.1, s * 0.2, s * 0.4 + legOff);
     ctx.fillRect(s * 0.05, s * 0.1, s * 0.2, s * 0.4 - legOff);
+    
+    // "SAVE ME" text above human when player is nearby (within 250px)
+    const dToPlayer = dist(h.x, h.y, game.player.x, game.player.y);
+    if (dToPlayer < 250 && dToPlayer > 40) {
+      ctx.fillStyle = '#44ff44';
+      ctx.globalAlpha = clamp(1 - dToPlayer / 250, 0.2, 0.8);
+      ctx.font = "6px 'Press Start 2P', monospace";
+      ctx.textAlign = 'center';
+      ctx.fillText('SAVE', 0, -s * 1.3);
+      ctx.globalAlpha = 1;
+    }
     
     ctx.restore();
   }
@@ -3688,6 +3782,205 @@ function drawTitleScreen(ctx) {
   ctx.fillText('INSPIRED BY ROBOTRON: 2084 & VAMPIRE SURVIVORS', w / 2, h * 0.90);
 }
 
+function drawAttractDemo(ctx) {
+  const w = game.width;
+  const h = game.height;
+  const t = game.attractTimer;
+  
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, w, h);
+  
+  // Simulated gameplay scene (pre-scripted visual, not real game)
+  // Background grid scrolling
+  ctx.strokeStyle = C.grid;
+  ctx.lineWidth = 0.5;
+  const scroll = t * 30;
+  ctx.beginPath();
+  for (let x = -GRID_SIZE + (scroll % GRID_SIZE); x < w + GRID_SIZE; x += GRID_SIZE) {
+    ctx.moveTo(x, 0); ctx.lineTo(x, h);
+  }
+  for (let y = -GRID_SIZE + (scroll * 0.7 % GRID_SIZE); y < h + GRID_SIZE; y += GRID_SIZE) {
+    ctx.moveTo(0, y); ctx.lineTo(w, y);
+  }
+  ctx.stroke();
+  
+  // Fake player moving in a pattern
+  const px = w * 0.5 + Math.sin(t * 1.2) * w * 0.25;
+  const py = h * 0.5 + Math.cos(t * 0.8) * h * 0.2;
+  // Player sprite
+  ctx.fillStyle = C.player;
+  ctx.fillRect(px - 7, py - 10, 14, 16);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(px - 5, py - 16, 10, 7);
+  
+  // Fake laser shots
+  for (let i = 0; i < 5; i++) {
+    const bx = px + Math.cos(t * 3 + i) * (50 + i * 40);
+    const by = py + Math.sin(t * 3 + i) * (30 + i * 25);
+    ctx.fillStyle = C.laser;
+    ctx.fillRect(bx - 4, by - 1, 8, 3);
+  }
+  
+  // Fake enemies moving across screen
+  for (let i = 0; i < 12; i++) {
+    const ex = ((t * 40 + i * 130) % (w + 100)) - 50;
+    const ey = 100 + Math.sin(t + i * 1.5) * 80 + (i % 3) * 150;
+    ctx.fillStyle = [C.grunt, C.enforcer, C.spheroid, C.quark][i % 4];
+    ctx.fillRect(ex - 8, ey - 8, 16, 16);
+  }
+  
+  // Fake humans
+  for (let i = 0; i < 4; i++) {
+    const hx = 150 + Math.sin(t * 0.5 + i * 2) * 100 + i * 200;
+    const hy = h * 0.3 + Math.cos(t * 0.7 + i) * 60 + i * 80;
+    ctx.fillStyle = [C.mommy, C.daddy, C.mikey, C.mommy][i];
+    ctx.fillRect(hx - 10, hy - 14, 20, 24);
+  }
+  
+  // Fake particle explosions
+  for (let i = 0; i < 3; i++) {
+    const ex = w * 0.3 + Math.sin(t * 2 + i * 3) * w * 0.3;
+    const ey = h * 0.4 + Math.cos(t * 1.5 + i * 2) * h * 0.2;
+    ctx.fillStyle = '#ff4444';
+    ctx.globalAlpha = 0.3 + Math.sin(t * 5 + i) * 0.3;
+    for (let j = 0; j < 5; j++) {
+      const px2 = ex + Math.cos(t * 8 + j) * (10 + j * 5);
+      const py2 = ey + Math.sin(t * 8 + j) * (10 + j * 5);
+      ctx.fillRect(px2 - 2, py2 - 2, 4, 4);
+    }
+  }
+  ctx.globalAlpha = 1;
+  
+  // "DEMO PLAY" watermark
+  ctx.fillStyle = '#ffffff';
+  ctx.globalAlpha = 0.3;
+  ctx.font = "10px 'Press Start 2P', monospace";
+  ctx.textAlign = 'left';
+  ctx.fillText('DEMO PLAY', 16, 24);
+  ctx.globalAlpha = 1;
+  
+  // Fake HUD
+  ctx.font = "bold 12px 'Press Start 2P', monospace";
+  ctx.fillStyle = C.textWhite;
+  ctx.textAlign = 'left';
+  ctx.fillText('SCORE ' + Math.floor(t * 850).toLocaleString(), 16, h - 20);
+  ctx.textAlign = 'right';
+  ctx.fillText('WAVE 7', w - 16, 24);
+  ctx.fillStyle = '#44ff44';
+  ctx.fillText('SURVIVORS: 12', w - 16, 40);
+  
+  // Press start overlay
+  ctx.textAlign = 'center';
+  const pressAlpha = 0.2 + Math.sin(t * Math.PI) * 0.4;
+  ctx.globalAlpha = pressAlpha;
+  ctx.fillStyle = C.textWhite;
+  ctx.font = "12px 'Press Start 2P', monospace";
+  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h - 50);
+  ctx.globalAlpha = 1;
+}
+
+function getFilteredScores(tier) {
+  const now = Date.now();
+  const todayStart = new Date(); todayStart.setHours(0,0,0,0);
+  const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1); weekStart.setHours(0,0,0,0);
+  
+  let filtered;
+  switch (tier) {
+    case 0: // daily
+      filtered = game.highScores.filter(s => s.timestamp >= todayStart.getTime());
+      break;
+    case 1: // weekly
+      filtered = game.highScores.filter(s => s.timestamp >= weekStart.getTime());
+      break;
+    case 2: // all-time
+    default:
+      filtered = [...game.highScores];
+      break;
+  }
+  return filtered.sort((a, b) => b.score - a.score).slice(0, 10);
+}
+
+function drawAttractScores(ctx) {
+  const w = game.width;
+  const h = game.height;
+  const t = game.attractTimer;
+  const tab = game.attractScoreTab;
+  const tabTimer = game.attractScoreTabTimer;
+  
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, w, h);
+  
+  ctx.textAlign = 'center';
+  
+  // Tab title
+  const titles = ["TODAY'S BEST", "THIS WEEK'S BEST", 'ALL TIME LEGENDS'];
+  const titleColors = ['#44ff44', '#ffcc00', '#ff4444'];
+  ctx.fillStyle = titleColors[tab];
+  ctx.font = "bold 20px 'Press Start 2P', monospace";
+  ctx.shadowColor = titleColors[tab];
+  ctx.shadowBlur = 10;
+  ctx.fillText(titles[tab], w / 2, h * 0.1);
+  ctx.shadowBlur = 0;
+  
+  // Get scores for this tier
+  const scores = getFilteredScores(tab);
+  
+  if (scores.length === 0) {
+    ctx.fillStyle = '#666666';
+    ctx.font = "12px 'Press Start 2P', monospace";
+    ctx.fillText('NO SCORES YET', w / 2, h * 0.4);
+    ctx.fillStyle = '#888888';
+    ctx.font = "9px 'Press Start 2P', monospace";
+    ctx.fillText('BE THE FIRST!', w / 2, h * 0.48);
+  } else {
+    // Header
+    ctx.fillStyle = '#666666';
+    ctx.font = "8px 'Press Start 2P', monospace";
+    ctx.fillText('RANK   INITIALS      SCORE       WAVE  LVL', w / 2, h * 0.17);
+    
+    // Entries (staggered fade-in)
+    for (let i = 0; i < scores.length; i++) {
+      const s = scores[i];
+      const rowDelay = i * 0.1;
+      const rowAlpha = clamp((tabTimer - rowDelay) * 5, 0, 1);
+      if (rowAlpha <= 0) continue;
+      
+      ctx.globalAlpha = rowAlpha;
+      const y = h * 0.22 + i * 28;
+      const isTop = i === 0;
+      
+      // Rank
+      ctx.fillStyle = isTop ? titleColors[tab] : C.textWhite;
+      ctx.font = `${isTop ? 'bold ' : ''}10px 'Press Start 2P', monospace`;
+      if (isTop) {
+        ctx.shadowColor = titleColors[tab];
+        ctx.shadowBlur = 8;
+      }
+      
+      const row = `${(i + 1).toString().padStart(2, ' ')}.  ${s.initials}    ${s.score.toLocaleString().padStart(10, ' ')}    W${s.wave}   L${s.level}`;
+      ctx.fillText(row, w / 2, y);
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+  }
+  
+  // Tab indicator dots
+  for (let i = 0; i < 3; i++) {
+    ctx.fillStyle = i === tab ? '#ffffff' : '#444444';
+    ctx.beginPath();
+    ctx.arc(w / 2 - 20 + i * 20, h * 0.92, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Press start
+  const pressAlpha = 0.2 + Math.sin(t * Math.PI) * 0.4;
+  ctx.globalAlpha = pressAlpha;
+  ctx.fillStyle = C.textWhite;
+  ctx.font = "10px 'Press Start 2P', monospace";
+  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.97);
+  ctx.globalAlpha = 1;
+}
+
 function drawGameOver(ctx) {
   const w = game.width;
   const h = game.height;
@@ -3743,6 +4036,229 @@ function drawGameOver(ctx) {
   ctx.font = "12px 'Press Start 2P', monospace";
   ctx.fillText(Input.gamepad ? 'PRESS START TO PLAY AGAIN' : 'PRESS ENTER TO PLAY AGAIN', w / 2, h * 0.85);
   ctx.globalAlpha = 1;
+}
+
+// ============================================================================
+// 21b. HIGH SCORE INITIALS ENTRY
+// ============================================================================
+
+const INITIALS_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.!? ';
+let hsEntry = {
+  active: false,
+  slots: [0, 0, 0], // indices into INITIALS_CHARS
+  currentSlot: 0,
+  holdTimer: 0,
+  holdDelay: 0.3,
+  timeoutTimer: 30,
+};
+
+function startHighScoreEntry() {
+  hsEntry.active = true;
+  hsEntry.slots = [0, 0, 0]; // default to 'A','A','A'
+  hsEntry.currentSlot = 0;
+  hsEntry.holdTimer = 0;
+  hsEntry.timeoutTimer = 30;
+  game.state = 'highscore_entry';
+  SFX.levelUp(); // celebration sound
+}
+
+function updateHighScoreEntry(dt) {
+  hsEntry.timeoutTimer -= dt;
+  if (hsEntry.timeoutTimer <= 0) {
+    submitHighScore();
+    return;
+  }
+  
+  // Navigate letters
+  let moved = false;
+  // D-pad up or left stick up = next letter
+  if (Input.gpJust(12) || Input.wasPressed('ArrowUp')) {
+    hsEntry.slots[hsEntry.currentSlot] = (hsEntry.slots[hsEntry.currentSlot] + 1) % INITIALS_CHARS.length;
+    moved = true;
+  }
+  // D-pad down or left stick down = prev letter
+  if (Input.gpJust(13) || Input.wasPressed('ArrowDown')) {
+    hsEntry.slots[hsEntry.currentSlot] = (hsEntry.slots[hsEntry.currentSlot] - 1 + INITIALS_CHARS.length) % INITIALS_CHARS.length;
+    moved = true;
+  }
+  
+  // Hold-to-repeat for stick
+  if (Input.gamepad) {
+    const gp = Input.gamepad;
+    const ly = gp.axes[1];
+    if (Math.abs(ly) > 0.5) {
+      hsEntry.holdTimer -= dt;
+      if (hsEntry.holdTimer <= 0) {
+        hsEntry.holdTimer = 0.08; // 12.5 chars/sec when holding
+        if (ly < -0.5) {
+          hsEntry.slots[hsEntry.currentSlot] = (hsEntry.slots[hsEntry.currentSlot] + 1) % INITIALS_CHARS.length;
+          moved = true;
+        } else {
+          hsEntry.slots[hsEntry.currentSlot] = (hsEntry.slots[hsEntry.currentSlot] - 1 + INITIALS_CHARS.length) % INITIALS_CHARS.length;
+          moved = true;
+        }
+      }
+    } else {
+      hsEntry.holdTimer = hsEntry.holdDelay;
+    }
+  }
+  
+  if (moved) SFX.menuNav();
+  
+  // Direct keyboard letter typing
+  for (let code = 65; code <= 90; code++) {
+    if (Input.wasPressed('Key' + String.fromCharCode(code))) {
+      hsEntry.slots[hsEntry.currentSlot] = code - 65; // A=0, B=1, etc.
+      if (hsEntry.currentSlot < 2) hsEntry.currentSlot++;
+      SFX.menuNav();
+    }
+  }
+  for (let code = 48; code <= 57; code++) {
+    if (Input.wasPressed('Digit' + String.fromCharCode(code))) {
+      hsEntry.slots[hsEntry.currentSlot] = 26 + (code - 48); // 0-9 after letters
+      if (hsEntry.currentSlot < 2) hsEntry.currentSlot++;
+      SFX.menuNav();
+    }
+  }
+  
+  // Confirm current slot (A button / Enter)
+  if (Input.confirmPressed()) {
+    if (hsEntry.currentSlot < 2) {
+      hsEntry.currentSlot++;
+      SFX.menuConfirm();
+    } else {
+      submitHighScore();
+    }
+  }
+  
+  // Back (B button / Backspace)
+  if (Input.backPressed()) {
+    if (hsEntry.currentSlot > 0) {
+      hsEntry.currentSlot--;
+      SFX.menuNav();
+    }
+  }
+}
+
+function submitHighScore() {
+  const initials = hsEntry.slots.map(i => INITIALS_CHARS[i]).join('');
+  const entry = {
+    initials,
+    score: game.player.score,
+    wave: game.wave,
+    level: game.player.level,
+    humansRescued: game.player.totalRescues,
+    enemiesKilled: game.player.totalKills,
+    timeSurvived: Math.floor(game.runTime),
+    timestamp: Date.now(),
+  };
+  
+  game.highScores.push(entry);
+  game.highScores.sort((a, b) => b.score - a.score);
+  if (game.highScores.length > 20) game.highScores.length = 20;
+  
+  // Try to save (works on Droplet, fails silently in sandbox)
+  try {
+    const _ls = window['local' + 'Storage'];
+    if (_ls) _ls.setItem('robo_survivors_scores', JSON.stringify(game.highScores));
+  } catch (e) { }
+  
+  if (game.player.score > game.sessionHigh) game.sessionHigh = game.player.score;
+  
+  hsEntry.active = false;
+  game.state = 'gameover';
+  SFX.menuConfirm();
+}
+
+function drawHighScoreEntry(ctx) {
+  const w = game.width;
+  const h = game.height;
+  
+  ctx.fillStyle = 'rgba(0,0,0,0.85)';
+  ctx.fillRect(0, 0, w, h);
+  
+  ctx.textAlign = 'center';
+  
+  // Title
+  ctx.fillStyle = C.textYellow;
+  ctx.font = "bold 24px 'Press Start 2P', monospace";
+  const titlePulse = 1 + Math.sin(game.time * 4) * 0.05;
+  ctx.save();
+  ctx.translate(w / 2, h * 0.15);
+  ctx.scale(titlePulse, titlePulse);
+  ctx.fillText('NEW HIGH SCORE!', 0, 0);
+  ctx.restore();
+  
+  // Score
+  ctx.fillStyle = C.textWhite;
+  ctx.font = "bold 18px 'Press Start 2P', monospace";
+  ctx.fillText(game.player.score.toLocaleString(), w / 2, h * 0.25);
+  
+  // Wave/Level
+  ctx.fillStyle = C.textCyan;
+  ctx.font = "10px 'Press Start 2P', monospace";
+  ctx.fillText(`WAVE ${game.wave}  LEVEL ${game.player.level}`, w / 2, h * 0.32);
+  
+  // Initials entry
+  ctx.fillStyle = C.textWhite;
+  ctx.font = "12px 'Press Start 2P', monospace";
+  ctx.fillText('ENTER YOUR INITIALS', w / 2, h * 0.42);
+  
+  // The 3 slots
+  const slotW = 50;
+  const slotGap = 20;
+  const totalW = slotW * 3 + slotGap * 2;
+  const startX = (w - totalW) / 2;
+  const slotY = h * 0.52;
+  
+  for (let i = 0; i < 3; i++) {
+    const sx = startX + i * (slotW + slotGap);
+    const isActive = i === hsEntry.currentSlot;
+    const char = INITIALS_CHARS[hsEntry.slots[i]];
+    
+    // Slot background
+    ctx.fillStyle = isActive ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.05)';
+    ctx.fillRect(sx, slotY - 5, slotW, 50);
+    ctx.strokeStyle = isActive ? C.textCyan : '#444444';
+    ctx.lineWidth = isActive ? 3 : 1;
+    ctx.strokeRect(sx, slotY - 5, slotW, 50);
+    
+    // Character
+    ctx.fillStyle = isActive ? C.textCyan : C.textWhite;
+    ctx.font = "bold 28px 'Press Start 2P', monospace";
+    ctx.fillText(char, sx + slotW / 2, slotY + 33);
+    
+    // Up/down arrows on active slot
+    if (isActive) {
+      ctx.fillStyle = C.textCyan;
+      ctx.font = "10px 'Press Start 2P', monospace";
+      const arrowBob = Math.sin(game.time * 6) * 3;
+      ctx.fillText('▲', sx + slotW / 2, slotY - 12 + arrowBob);
+      ctx.fillText('▼', sx + slotW / 2, slotY + 60 - arrowBob);
+    }
+  }
+  
+  // Underline for active slot
+  const activeX = startX + hsEntry.currentSlot * (slotW + slotGap);
+  ctx.fillStyle = C.textCyan;
+  ctx.globalAlpha = 0.5 + Math.sin(game.time * 8) * 0.5;
+  ctx.fillRect(activeX + 5, slotY + 42, slotW - 10, 3);
+  ctx.globalAlpha = 1;
+  
+  // Controls hint
+  ctx.fillStyle = '#666666';
+  ctx.font = "7px 'Press Start 2P', monospace";
+  if (Input.gamepad) {
+    ctx.fillText('D-PAD: CHANGE LETTER     A: CONFIRM     B: BACK', w / 2, h * 0.75);
+  } else {
+    ctx.fillText('UP/DOWN: CHANGE     ENTER: CONFIRM     BACKSPACE: BACK', w / 2, h * 0.75);
+    ctx.fillText('OR TYPE A LETTER KEY DIRECTLY', w / 2, h * 0.75 + 16);
+  }
+  
+  // Timeout
+  ctx.fillStyle = '#444444';
+  ctx.font = "7px 'Press Start 2P', monospace";
+  ctx.fillText(`AUTO-SUBMIT IN ${Math.ceil(hsEntry.timeoutTimer)}s`, w / 2, h * 0.88);
 }
 
 // ============================================================================
@@ -3854,7 +4370,26 @@ function init() {
       switch (game.state) {
         case 'title':
           game.attractTimer += dt;
-          if (Input.startPressed()) { startGame(); }
+          if (Input.startPressed()) { startGame(); break; }
+          // Attract mode cycle: title 60s -> demo 30s -> scores 30s -> title
+          if (game.attractPhase === 0 && game.attractTimer > 60) {
+            game.attractPhase = 1; game.attractTimer = 0; // -> demo
+          } else if (game.attractPhase === 1 && game.attractTimer > 30) {
+            game.attractPhase = 2; game.attractTimer = 0; game.attractScoreTab = 0; game.attractScoreTabTimer = 0; // -> scores
+          } else if (game.attractPhase === 2 && game.attractTimer > 30) {
+            game.attractPhase = 0; game.attractTimer = 0; // -> title
+          }
+          // Score tab cycling (10s each: daily, weekly, all-time)
+          if (game.attractPhase === 2) {
+            game.attractScoreTabTimer += dt;
+            if (game.attractScoreTabTimer > 10) {
+              game.attractScoreTabTimer = 0;
+              game.attractScoreTab = (game.attractScoreTab + 1) % 3;
+            }
+          }
+          break;
+        case 'highscore_entry':
+          updateHighScoreEntry(dt);
           break;
           
         case 'playing':
@@ -3905,7 +4440,14 @@ function init() {
           
         case 'gameover':
           game.attractTimer += dt;
-          if (Input.startPressed()) { startGame(); }
+          game.attractReturnTimer -= dt;
+          if (Input.startPressed()) { startGame(); break; }
+          // Return to attract mode after 30s idle on gameover
+          if (game.attractReturnTimer <= 0) {
+            game.state = 'title';
+            game.attractPhase = 0;
+            game.attractTimer = 0;
+          }
           break;
       }
       
@@ -3919,7 +4461,17 @@ function init() {
     
     switch (game.state) {
       case 'title':
-        drawTitleScreen(ctx);
+        if (game.attractPhase === 0) {
+          drawTitleScreen(ctx);
+        } else if (game.attractPhase === 1) {
+          drawAttractDemo(ctx);
+        } else if (game.attractPhase === 2) {
+          drawAttractScores(ctx);
+        }
+        break;
+      case 'highscore_entry':
+        drawWorld(ctx);
+        drawHighScoreEntry(ctx);
         break;
         
       case 'playing':
