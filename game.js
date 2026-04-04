@@ -1721,6 +1721,592 @@ function recalcPassiveStats() {
 }
 
 // ============================================================================
+// 16b. WEAPON EFFECTS SYSTEM
+// ============================================================================
+
+// Runtime state for active weapons
+const weaponState = {
+  orbital: { angle: 0 },
+  missiles: { cooldown: 0 },
+  shockwave: { cooldown: 0, activeRadius: 0, activeDuration: 0 },
+  lightning: { cooldown: 0, arcs: [] },
+  flame: { trail: [] }, // {x, y, life, maxLife}
+  spread: { cooldown: 0 },
+  mines: { cooldown: 0, placed: [] }, // {x, y, radius, life, armed}
+  plasma: { cooldown: 0, waves: [] }, // {x, y, dirX, dirY, dist, life}
+};
+
+function resetWeaponState() {
+  weaponState.orbital.angle = 0;
+  weaponState.missiles.cooldown = 0;
+  weaponState.shockwave.cooldown = 0;
+  weaponState.shockwave.activeRadius = 0;
+  weaponState.shockwave.activeDuration = 0;
+  weaponState.lightning.cooldown = 0;
+  weaponState.lightning.arcs = [];
+  weaponState.flame.trail = [];
+  weaponState.spread.cooldown = 0;
+  weaponState.mines.cooldown = 0;
+  weaponState.mines.placed = [];
+  weaponState.plasma.cooldown = 0;
+  weaponState.plasma.waves = [];
+}
+
+function getWeaponLevel(id) {
+  const w = game.player.weapons.find(w => w.id === id);
+  return w ? w.level : 0;
+}
+
+function updateWeapons(dt) {
+  const p = game.player;
+  if (!p.alive) return;
+  const dmgMult = p.damageMulti;
+  const cdMult = Math.max(0.3, p.cooldownMulti); // floor at 30%
+  const aoeMult = p.aoeMulti;
+  const durMult = p.durationMulti;
+  const projSpd = p.projSpeedMulti;
+
+  // ---- ORBITAL SHIELD ----
+  const orbLv = getWeaponLevel('orbital');
+  if (orbLv > 0) {
+    const orbCount = Math.min(2 + Math.floor(orbLv / 2), 6); // 2,2,3,3,4,4,5,6
+    const orbRadius = 50 + orbLv * 5;
+    const orbSpeed = 2.5 + orbLv * 0.3;
+    const orbDmg = (1 + orbLv * 0.8) * dmgMult;
+    weaponState.orbital.angle += orbSpeed * dt;
+
+    for (let i = 0; i < orbCount; i++) {
+      const a = weaponState.orbital.angle + (i / orbCount) * Math.PI * 2;
+      const ox = p.x + Math.cos(a) * orbRadius;
+      const oy = p.y + Math.sin(a) * orbRadius;
+      // Hit enemies
+      for (const e of game.enemies) {
+        if (!e.active || !e.alive || e.spawnTimer > 0) continue;
+        if (dist(ox, oy, e.x, e.y) < e.size + 8) {
+          damageEnemy(e, orbDmg);
+        }
+      }
+    }
+  }
+
+  // ---- HOMING MISSILES ----
+  const misLv = getWeaponLevel('missiles');
+  if (misLv > 0) {
+    const misCount = Math.min(1 + Math.floor(misLv / 2), 5); // 1,1,2,2,3,3,4,5
+    const misCd = Math.max(0.4, (2.0 - misLv * 0.2) * cdMult);
+    const misDmg = (3 + misLv * 1.5) * dmgMult;
+    const misSpd = (350 + misLv * 30) * projSpd;
+
+    weaponState.missiles.cooldown -= dt;
+    if (weaponState.missiles.cooldown <= 0) {
+      weaponState.missiles.cooldown = misCd;
+      // Find nearest enemies and fire at them
+      const sorted = game.enemies
+        .filter(e => e.active && e.alive && e.spawnTimer <= 0)
+        .map(e => ({ e, d: dist(p.x, p.y, e.x, e.y) }))
+        .sort((a, b) => a.d - b.d);
+      for (let i = 0; i < misCount && i < sorted.length; i++) {
+        const target = sorted[i].e;
+        const b = game.playerBullets.get();
+        if (!b) break;
+        const a = angle(p.x, p.y, target.x, target.y);
+        b.x = p.x; b.y = p.y;
+        b.prevX = p.x; b.prevY = p.y;
+        b.vx = Math.cos(a) * misSpd;
+        b.vy = Math.sin(a) * misSpd;
+        b.dmg = misDmg;
+        b._type = 'missile'; // for rendering
+        b._target = target;
+        b._homingStr = 3.0 + misLv * 0.5;
+        b._life = 3.0;
+      }
+      playTone(600, 0.05, 'sawtooth', 0.08, 400);
+    }
+  }
+
+  // ---- SHOCKWAVE PULSE ----
+  const swLv = getWeaponLevel('shockwave');
+  if (swLv > 0) {
+    const swCd = Math.max(1.0, (4.0 - swLv * 0.35) * cdMult);
+    const swRadius = (80 + swLv * 25) * aoeMult;
+    const swDmg = (2 + swLv * 1.2) * dmgMult;
+    const swKnockback = 60 + swLv * 15;
+
+    weaponState.shockwave.cooldown -= dt;
+    if (weaponState.shockwave.cooldown <= 0) {
+      weaponState.shockwave.cooldown = swCd;
+      weaponState.shockwave.activeRadius = 0;
+      weaponState.shockwave.activeDuration = 0.3;
+      weaponState.shockwave._maxRadius = swRadius;
+      // Damage + knockback all enemies in radius
+      for (const e of game.enemies) {
+        if (!e.active || !e.alive || e.spawnTimer > 0) continue;
+        const d = dist(p.x, p.y, e.x, e.y);
+        if (d < swRadius) {
+          damageEnemy(e, swDmg);
+          // Knockback
+          if (d > 0) {
+            const nx = (e.x - p.x) / d;
+            const ny = (e.y - p.y) / d;
+            e.x += nx * swKnockback;
+            e.y += ny * swKnockback;
+          }
+        }
+      }
+      playTone(150, 0.15, 'sine', 0.12, 50);
+      game.shakeTimer = 0.1;
+      game.shakeIntensity = 3;
+    }
+    // Animate expanding ring
+    if (weaponState.shockwave.activeDuration > 0) {
+      weaponState.shockwave.activeDuration -= dt;
+      weaponState.shockwave.activeRadius = lerp(0, weaponState.shockwave._maxRadius || 200, 1 - weaponState.shockwave.activeDuration / 0.3);
+    }
+  }
+
+  // ---- CHAIN LIGHTNING ----
+  const ltLv = getWeaponLevel('lightning');
+  if (ltLv > 0) {
+    const ltCd = Math.max(0.4, (1.2 - ltLv * 0.08) * cdMult);
+    const ltChains = Math.min(1 + ltLv, 6); // 2,3,4,5,6,6,6,6 (capped)
+    const ltDmg = (2 + ltLv * 0.8) * dmgMult;
+    const ltRange = (150 + ltLv * 20) * aoeMult;
+
+    weaponState.lightning.cooldown -= dt;
+    if (weaponState.lightning.cooldown <= 0) {
+      weaponState.lightning.cooldown = ltCd;
+      weaponState.lightning.arcs = [];
+      // Find nearest enemy
+      let current = { x: p.x, y: p.y };
+      const hit = new Set();
+      for (let c = 0; c < ltChains; c++) {
+        let nearest = null;
+        let nearDist = Infinity;
+        for (const e of game.enemies) {
+          if (!e.active || !e.alive || e.spawnTimer > 0 || hit.has(e)) continue;
+          const d = dist(current.x, current.y, e.x, e.y);
+          if (d < ltRange && d < nearDist) {
+            nearDist = d;
+            nearest = e;
+          }
+        }
+        if (!nearest) break;
+        hit.add(nearest);
+        weaponState.lightning.arcs.push({ x1: current.x, y1: current.y, x2: nearest.x, y2: nearest.y, life: 0.15 });
+        damageEnemy(nearest, ltDmg);
+        current = { x: nearest.x, y: nearest.y };
+      }
+      if (weaponState.lightning.arcs.length > 0) {
+        playTone(1200, 0.04, 'square', 0.08, 800);
+      }
+    }
+    // Decay arc visuals
+    for (let i = weaponState.lightning.arcs.length - 1; i >= 0; i--) {
+      weaponState.lightning.arcs[i].life -= dt;
+      if (weaponState.lightning.arcs[i].life <= 0) weaponState.lightning.arcs.splice(i, 1);
+    }
+  }
+
+  // ---- FLAME TRAIL ----
+  const flLv = getWeaponLevel('flame');
+  if (flLv > 0) {
+    const flDmg = (1 + flLv * 0.6) * dmgMult;
+    const flLife = (1.0 + flLv * 0.4) * durMult;
+    const flWidth = (12 + flLv * 3) * aoeMult;
+    const isMoving = Math.abs(Input.moveX) > 0.01 || Math.abs(Input.moveY) > 0.01;
+
+    // Drop flame segments while moving
+    if (isMoving) {
+      const trail = weaponState.flame.trail;
+      const last = trail.length > 0 ? trail[trail.length - 1] : null;
+      if (!last || dist(last.x, last.y, p.x, p.y) > 10) {
+        trail.push({ x: p.x, y: p.y, life: flLife, maxLife: flLife, radius: flWidth, dmg: flDmg });
+      }
+    }
+    // Update trail segments
+    for (let i = weaponState.flame.trail.length - 1; i >= 0; i--) {
+      const seg = weaponState.flame.trail[i];
+      seg.life -= dt;
+      if (seg.life <= 0) { weaponState.flame.trail.splice(i, 1); continue; }
+      // Damage enemies touching this segment
+      seg._dmgTimer = (seg._dmgTimer || 0) - dt;
+      if (seg._dmgTimer <= 0) {
+        seg._dmgTimer = 0.3; // damage tick rate
+        for (const e of game.enemies) {
+          if (!e.active || !e.alive || e.spawnTimer > 0) continue;
+          if (dist(seg.x, seg.y, e.x, e.y) < seg.radius + e.size) {
+            damageEnemy(e, seg.dmg);
+          }
+        }
+      }
+    }
+  }
+
+  // ---- SPREAD SHOT ----
+  const spLv = getWeaponLevel('spread');
+  if (spLv > 0) {
+    const spCount = 3 + Math.floor(spLv * 0.7); // 3,4,4,5,5,6,7,8
+    const spCd = Math.max(0.3, (1.2 - spLv * 0.1) * cdMult);
+    const spDmg = (1.5 + spLv * 0.6) * dmgMult;
+    const spSpd = (500 + spLv * 30) * projSpd;
+    const spreadAngle = Math.PI * (0.4 - spLv * 0.02); // narrows at higher levels
+
+    weaponState.spread.cooldown -= dt;
+    if (weaponState.spread.cooldown <= 0) {
+      weaponState.spread.cooldown = spCd;
+      const baseAngle = p.facing;
+      for (let i = 0; i < spCount; i++) {
+        const a = baseAngle + (i / (spCount - 1) - 0.5) * spreadAngle;
+        const b = game.playerBullets.get();
+        if (!b) break;
+        b.x = p.x; b.y = p.y;
+        b.prevX = p.x; b.prevY = p.y;
+        b.vx = Math.cos(a) * spSpd;
+        b.vy = Math.sin(a) * spSpd;
+        b.dmg = spDmg;
+        b._type = 'spread';
+      }
+      playTone(700, 0.04, 'square', 0.06, 500);
+    }
+  }
+
+  // ---- MINE LAYER ----
+  const mnLv = getWeaponLevel('mines');
+  if (mnLv > 0) {
+    const mnCd = Math.max(0.8, (3.0 - mnLv * 0.25) * cdMult);
+    const mnBlast = (50 + mnLv * 12) * aoeMult;
+    const mnDmg = (4 + mnLv * 2) * dmgMult;
+    const mnLife = 10 + mnLv * 2;
+    const mnPerDrop = Math.min(1 + Math.floor(mnLv / 3), 3); // 1,1,1,2,2,2,3,3
+
+    weaponState.mines.cooldown -= dt;
+    if (weaponState.mines.cooldown <= 0) {
+      weaponState.mines.cooldown = mnCd;
+      for (let i = 0; i < mnPerDrop; i++) {
+        weaponState.mines.placed.push({
+          x: p.x + randF(-20, 20), y: p.y + randF(-20, 20),
+          radius: mnBlast, dmg: mnDmg, life: mnLife,
+          armed: false, armTimer: 0.5, // arm after 0.5s
+          pulseTimer: 0,
+        });
+      }
+    }
+    // Update mines
+    for (let i = weaponState.mines.placed.length - 1; i >= 0; i--) {
+      const m = weaponState.mines.placed[i];
+      m.life -= dt;
+      m.pulseTimer += dt;
+      if (m.life <= 0) { weaponState.mines.placed.splice(i, 1); continue; }
+      if (!m.armed) {
+        m.armTimer -= dt;
+        if (m.armTimer <= 0) m.armed = true;
+        continue;
+      }
+      // Check proximity to enemies
+      let triggered = false;
+      for (const e of game.enemies) {
+        if (!e.active || !e.alive || e.spawnTimer > 0) continue;
+        if (dist(m.x, m.y, e.x, e.y) < 40) {
+          triggered = true; break;
+        }
+      }
+      if (triggered) {
+        // Explode!
+        for (const e of game.enemies) {
+          if (!e.active || !e.alive || e.spawnTimer > 0) continue;
+          if (dist(m.x, m.y, e.x, e.y) < m.radius) {
+            damageEnemy(e, m.dmg);
+          }
+        }
+        emitParticles(m.x, m.y, 15, '#ff8800', 20, 180, 0.5, 4);
+        emitParticles(m.x, m.y, 8, '#ffcc00', 15, 120, 0.3, 3);
+        playTone(120, 0.15, 'square', 0.12, 40);
+        game.shakeTimer = 0.08;
+        game.shakeIntensity = 2;
+        weaponState.mines.placed.splice(i, 1);
+      }
+    }
+  }
+
+  // ---- PLASMA WAVE ----
+  const plLv = getWeaponLevel('plasma');
+  if (plLv > 0) {
+    const plCd = Math.max(1.0, (5.0 - plLv * 0.4) * cdMult);
+    const plDmg = (3 + plLv * 1.5) * dmgMult;
+    const plSpd = 400 * projSpd;
+    const plWidth = (20 + plLv * 5) * aoeMult;
+    const plDirs = Math.min(1 + Math.floor(plLv / 2), 4); // 1,1,2,2,3,3,4,4
+
+    weaponState.plasma.cooldown -= dt;
+    if (weaponState.plasma.cooldown <= 0) {
+      weaponState.plasma.cooldown = plCd;
+      const directions = [];
+      if (plDirs >= 1) directions.push({ x: 1, y: 0 });  // right
+      if (plDirs >= 2) directions.push({ x: -1, y: 0 }); // left
+      if (plDirs >= 3) directions.push({ x: 0, y: -1 }); // up
+      if (plDirs >= 4) directions.push({ x: 0, y: 1 });  // down
+      for (const dir of directions) {
+        weaponState.plasma.waves.push({
+          x: p.x, y: p.y,
+          dirX: dir.x, dirY: dir.y,
+          speed: plSpd, width: plWidth, dmg: plDmg,
+          dist: 0, maxDist: 800 + plLv * 50,
+          life: 2.0, _hitSet: new Set(),
+        });
+      }
+      playTone(200, 0.12, 'sawtooth', 0.1, 600);
+    }
+    // Update plasma waves
+    for (let i = weaponState.plasma.waves.length - 1; i >= 0; i--) {
+      const pw = weaponState.plasma.waves[i];
+      const move = pw.speed * dt;
+      pw.x += pw.dirX * move;
+      pw.y += pw.dirY * move;
+      pw.dist += move;
+      pw.life -= dt;
+      if (pw.life <= 0 || pw.dist > pw.maxDist || pw.x < 0 || pw.x > WORLD_W || pw.y < 0 || pw.y > WORLD_H) {
+        weaponState.plasma.waves.splice(i, 1); continue;
+      }
+      // Damage enemies (pass through, but only hit each once)
+      for (const e of game.enemies) {
+        if (!e.active || !e.alive || e.spawnTimer > 0 || pw._hitSet.has(e)) continue;
+        // Check if enemy is within the wave beam width
+        let inBeam = false;
+        if (Math.abs(pw.dirX) > 0.5) {
+          // Horizontal beam
+          inBeam = Math.abs(e.y - pw.y) < pw.width + e.size && Math.abs(e.x - pw.x) < 40;
+        } else {
+          // Vertical beam
+          inBeam = Math.abs(e.x - pw.x) < pw.width + e.size && Math.abs(e.y - pw.y) < 40;
+        }
+        if (inBeam) {
+          damageEnemy(e, pw.dmg);
+          pw._hitSet.add(e);
+        }
+      }
+    }
+  }
+
+  // ---- UPDATE HOMING MISSILE BULLETS ----
+  game.playerBullets.forEach(b => {
+    if (b._type === 'missile' && b._target) {
+      const t = b._target;
+      if (t.active && t.alive) {
+        const dx = t.x - b.x;
+        const dy = t.y - b.y;
+        const d = Math.hypot(dx, dy);
+        if (d > 0) {
+          b.vx += (dx / d) * b._homingStr;
+          b.vy += (dy / d) * b._homingStr;
+        }
+      }
+      b._life -= dt;
+      if (b._life <= 0) b.active = false;
+      // Exhaust particles
+      if (Math.random() < 0.4) {
+        emitParticles(b.x, b.y, 1, '#ff6600', 3, 15, 0.15, 2);
+      }
+    }
+  });
+}
+
+function drawWeapons(ctx) {
+  const p = game.player;
+  if (!p.alive) return;
+
+  // ---- ORBITAL SHIELD ORBS ----
+  const orbLv = getWeaponLevel('orbital');
+  if (orbLv > 0) {
+    const orbCount = Math.min(2 + Math.floor(orbLv / 2), 6);
+    const orbRadius = 50 + orbLv * 5;
+    const orbSize = 6 + orbLv * 0.5;
+    for (let i = 0; i < orbCount; i++) {
+      const a = weaponState.orbital.angle + (i / orbCount) * Math.PI * 2;
+      const ox = p.x + Math.cos(a) * orbRadius;
+      const oy = p.y + Math.sin(a) * orbRadius;
+      // Glow
+      ctx.fillStyle = '#44ccff';
+      ctx.globalAlpha = 0.3;
+      ctx.beginPath();
+      ctx.arc(ox, oy, orbSize * 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      // Core
+      ctx.globalAlpha = 0.9;
+      ctx.fillStyle = '#88eeff';
+      ctx.beginPath();
+      ctx.arc(ox, oy, orbSize, 0, Math.PI * 2);
+      ctx.fill();
+      // Afterimage trail
+      const prevA = a - 0.3;
+      ctx.globalAlpha = 0.15;
+      ctx.fillStyle = '#44ccff';
+      ctx.beginPath();
+      ctx.arc(p.x + Math.cos(prevA) * orbRadius, p.y + Math.sin(prevA) * orbRadius, orbSize * 0.7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- SHOCKWAVE EXPANDING RING ----
+  if (weaponState.shockwave.activeDuration > 0) {
+    const alpha = weaponState.shockwave.activeDuration / 0.3;
+    ctx.strokeStyle = '#88ddff';
+    ctx.lineWidth = 3 + (1 - alpha) * 4;
+    ctx.globalAlpha = alpha * 0.6;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, weaponState.shockwave.activeRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    // Inner ring
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = alpha * 0.3;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, weaponState.shockwave.activeRadius * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- CHAIN LIGHTNING ARCS ----
+  for (const arc of weaponState.lightning.arcs) {
+    const alpha = arc.life / 0.15;
+    ctx.strokeStyle = '#aaeeff';
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = alpha;
+    // Draw jagged lightning bolt
+    ctx.beginPath();
+    ctx.moveTo(arc.x1, arc.y1);
+    const segments = 6;
+    const dx = arc.x2 - arc.x1;
+    const dy = arc.y2 - arc.y1;
+    for (let s = 1; s < segments; s++) {
+      const t = s / segments;
+      const jitter = 12 * (1 - Math.abs(t - 0.5) * 2);
+      ctx.lineTo(
+        arc.x1 + dx * t + randF(-jitter, jitter),
+        arc.y1 + dy * t + randF(-jitter, jitter)
+      );
+    }
+    ctx.lineTo(arc.x2, arc.y2);
+    ctx.stroke();
+    // Bright center
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(arc.x1, arc.y1);
+    ctx.lineTo(arc.x2, arc.y2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // ---- FLAME TRAIL ----
+  for (const seg of weaponState.flame.trail) {
+    const alpha = seg.life / seg.maxLife;
+    const r = seg.radius * alpha;
+    // Outer glow
+    ctx.fillStyle = '#ff4400';
+    ctx.globalAlpha = alpha * 0.4;
+    ctx.beginPath();
+    ctx.arc(seg.x, seg.y, r * 1.3, 0, Math.PI * 2);
+    ctx.fill();
+    // Core
+    ctx.fillStyle = '#ff8800';
+    ctx.globalAlpha = alpha * 0.7;
+    ctx.beginPath();
+    ctx.arc(seg.x, seg.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    // Bright center
+    ctx.fillStyle = '#ffcc44';
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.beginPath();
+    ctx.arc(seg.x, seg.y, r * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // ---- MINES ----
+  for (const m of weaponState.mines.placed) {
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    const pulse = m.armed ? 0.5 + Math.sin(m.pulseTimer * 6) * 0.5 : 0.3;
+    // Outer ring
+    ctx.strokeStyle = m.armed ? '#ff6600' : '#666666';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = pulse;
+    ctx.beginPath();
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.stroke();
+    // Center
+    ctx.fillStyle = m.armed ? '#ff4400' : '#444444';
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+    ctx.fill();
+    // Blink light
+    if (m.armed) {
+      ctx.fillStyle = '#ff0000';
+      ctx.globalAlpha = pulse;
+      ctx.fillRect(-2, -2, 4, 4);
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // ---- PLASMA WAVES ----
+  for (const pw of weaponState.plasma.waves) {
+    const alpha = pw.life / 2.0;
+    const hw = pw.width;
+    ctx.save();
+    ctx.translate(pw.x, pw.y);
+    // Bright beam
+    ctx.fillStyle = '#aa44ff';
+    ctx.globalAlpha = alpha * 0.6;
+    if (Math.abs(pw.dirX) > 0.5) {
+      // Horizontal beam
+      ctx.fillRect(-30, -hw, 60, hw * 2);
+    } else {
+      // Vertical beam
+      ctx.fillRect(-hw, -30, hw * 2, 60);
+    }
+    // Core
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = alpha * 0.4;
+    if (Math.abs(pw.dirX) > 0.5) {
+      ctx.fillRect(-20, -hw * 0.4, 40, hw * 0.8);
+    } else {
+      ctx.fillRect(-hw * 0.4, -20, hw * 0.8, 40);
+    }
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+
+  // ---- HOMING MISSILE BULLETS (custom rendering) ----
+  game.playerBullets.forEach(b => {
+    if (!b.active || b._type !== 'missile') return;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    const a = Math.atan2(b.vy, b.vx);
+    ctx.rotate(a);
+    // Body
+    ctx.fillStyle = '#ff8844';
+    ctx.fillRect(-6, -2, 12, 4);
+    // Exhaust
+    ctx.fillStyle = '#ff4400';
+    ctx.fillRect(-9, -1, 4, 2);
+    ctx.restore();
+  });
+
+  // ---- SPREAD SHOT BULLETS (custom rendering) ----
+  game.playerBullets.forEach(b => {
+    if (!b.active || b._type !== 'spread') return;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.fillStyle = '#ffcc44';
+    ctx.fillRect(-3, -2, 6, 4);
+    ctx.restore();
+  });
+}
+
+// ============================================================================
 // 17. STOMPY
 // ============================================================================
 
@@ -1958,6 +2544,7 @@ function drawWorld(ctx) {
   
   // Draw game entities
   drawGems(ctx);
+  drawWeapons(ctx);
   drawHumans(ctx);
   drawEnemies(ctx);
   drawProjectiles(ctx);
@@ -2412,6 +2999,7 @@ function resetGame() {
   stompyActive = false;
   stompyTimer = 0;
   game.camZoom = 1.0;
+  resetWeaponState();
   
   // Camera
   game.camX = p.x - game.width / 2;
@@ -2489,6 +3077,7 @@ function init() {
           updateHumans(dt);
           updateProjectiles(dt);
           updateGems(dt);
+          updateWeapons(dt);
           updateStompy(dt);
           updateWaveSystem(dt);
           updateCamera(dt);
