@@ -248,16 +248,41 @@ const Input = {
     this.moveY = my;
     this.aimX = ax;
     this.aimY = ay;
+    
+    // Stick flick detection for menu navigation (crosses 0.5 threshold)
+    if (this.gamepad) {
+      const lx = this.gamepad.axes[0];
+      const ly = this.gamepad.axes[1];
+      this._stickCooldown -= 1/60;
+      if (this._stickCooldown <= 0) {
+        if (lx < -0.5 && this._prevLX >= -0.5) { this._stickFlickX = -1; this._stickCooldown = 0.15; }
+        if (lx > 0.5 && this._prevLX <= 0.5) { this._stickFlickX = 1; this._stickCooldown = 0.15; }
+        if (ly < -0.5 && this._prevLY >= -0.5) { this._stickFlickY = -1; this._stickCooldown = 0.15; }
+        if (ly > 0.5 && this._prevLY <= 0.5) { this._stickFlickY = 1; this._stickCooldown = 0.15; }
+      }
+      this._prevLX = lx;
+      this._prevLY = ly;
+    }
   },
 
-  endFrame() { this.justPressed = {}; },
+  // Left stick flick detection for menu navigation
+  _prevLX: 0, _prevLY: 0,
+  _stickFlickX: 0, _stickFlickY: 0,
+  _stickCooldown: 0,
+  
+  endFrame() { this.justPressed = {}; this._stickFlickX = 0; this._stickFlickY = 0; },
   isDown(code) { return !!this.keys[code]; },
   wasPressed(code) { return !!this.justPressed[code]; },
   gpJust(index) { return this.gpButtonsJust[index]; },
   gpDown(index) { return this.gpButtons[index]; },
-  startPressed() { return this.gpJust(9) || this.wasPressed('Enter') || this.wasPressed('Space'); },
-  confirmPressed() { return this.gpJust(0) || this.wasPressed('Enter') || this.wasPressed('Space'); },
+  startPressed() { return this.gpJust(9) || this.wasPressed('Enter'); },
+  confirmPressed() { return this.gpJust(0) || this.wasPressed('Enter'); },
   backPressed() { return this.gpJust(1) || this.wasPressed('Backspace') || this.wasPressed('Escape'); },
+  // Menu navigation: d-pad OR left stick flick
+  menuLeft() { return this.gpJust(14) || this.wasPressed('ArrowLeft') || this._stickFlickX < 0; },
+  menuRight() { return this.gpJust(15) || this.wasPressed('ArrowRight') || this._stickFlickX > 0; },
+  menuUp() { return this.gpJust(12) || this.wasPressed('ArrowUp') || this._stickFlickY < 0; },
+  menuDown() { return this.gpJust(13) || this.wasPressed('ArrowDown') || this._stickFlickY > 0; },
 };
 
 // ============================================================================
@@ -3119,6 +3144,146 @@ function updateStompy(dt) {
 }
 
 // ============================================================================
+// 17b. SMART BOMB SYSTEM (Defender-inspired)
+// ============================================================================
+
+game.smartBombs = 0;
+game.smartBombFlash = 0; // visual flash timer
+game.smartBombNextAward = 5; // next wave to award bombs
+game.smartBombBonusThreshold = 500000; // next score threshold for bonus bomb
+
+function awardSmartBombs() {
+  // Award 2 bombs every 5 waves, +1 per 500k points scored
+  game.smartBombs += 2;
+  // Check score bonuses
+  while (game.player.score >= game.smartBombBonusThreshold) {
+    game.smartBombs++;
+    game.smartBombBonusThreshold += 500000;
+  }
+}
+
+function triggerSmartBomb() {
+  if (game.smartBombs <= 0 || !game.player.alive) return;
+  game.smartBombs--;
+  
+  // ---- DEFENDER SMART BOMB SOUND ----
+  // Multi-phase explosion: initial sharp crack, secondary detonation, rumbling decay
+  // Phase 1: Sharp attack — bright square wave burst
+  playTone(800, 0.08, 'square', 0.3, 200);
+  playNoise(0.1, 0.25);
+  // Phase 2: Secondary explosion — lower, expanding
+  playTone(400, 0.15, 'square', 0.25, 80, 0.08);
+  playTone(200, 0.2, 'sawtooth', 0.2, 50, 0.12);
+  playNoise(0.2, 0.18, 0.1);
+  // Phase 3: Rumbling decay with modulated pulse width
+  playTone(100, 0.35, 'square', 0.15, 30, 0.25);
+  playTone(60, 0.4, 'sine', 0.12, 20, 0.35);
+  playNoise(0.3, 0.08, 0.3);
+  // Phase 4: Final low thud
+  playTone(35, 0.3, 'sine', 0.1, 15, 0.6);
+  
+  // ---- DEFENDER SMART BOMB VISUAL ----
+  // Screen flashes bright white, all visible enemies explode into pixel particles
+  game.smartBombFlash = 0.4;
+  game.shakeTimer = 0.5;
+  game.shakeIntensity = 10;
+  
+  // Determine which enemies are on screen (visible to player)
+  const camL = game.camX;
+  const camR = game.camX + game.width / game.camZoom;
+  const camT = game.camY;
+  const camB = game.camY + game.height / game.camZoom;
+  const margin = 50; // slight margin beyond screen edge
+  
+  for (let i = game.enemies.length - 1; i >= 0; i--) {
+    const e = game.enemies[i];
+    if (!e.active) continue;
+    
+    // Only destroy enemies visible on screen
+    if (e.x < camL - margin || e.x > camR + margin || e.y < camT - margin || e.y > camB + margin) continue;
+    
+    // OBLITERATE — Defender-style pixel explosion
+    // Each enemy bursts into many bright colored particles that radiate outward then fade
+    const particleCount = Math.min(20, 8 + e.size); // more particles for bigger enemies
+    for (let j = 0; j < particleCount; j++) {
+      const angle = (j / particleCount) * Math.PI * 2 + randF(0, 0.5);
+      const speed = randF(100, 350);
+      const p = particles.get();
+      if (!p) break;
+      p.x = e.x + randF(-e.size * 0.3, e.size * 0.3);
+      p.y = e.y + randF(-e.size * 0.3, e.size * 0.3);
+      p.vx = Math.cos(angle) * speed;
+      p.vy = Math.sin(angle) * speed;
+      p.life = randF(0.5, 1.2);
+      p.maxLife = p.life;
+      // Bright colors cycling through white -> enemy color -> orange -> fade
+      p.color = ['#ffffff', '#ffffff', e.color, '#ff8844', '#ffcc44'][randI(0, 4)];
+      p.size = randF(2, 5);
+    }
+    
+    // Additional bright white flash particles at center
+    emitParticles(e.x, e.y, 5, '#ffffff', 10, 250, 0.3, 4);
+    
+    // Kill the enemy (scores points, drops gems)
+    e.hp = 0;
+    killEnemy(e, i);
+  }
+  
+  // Bright radiating rings expanding from player position (Defender screen-fill effect)
+  // These are drawn in the render loop via smartBombFlash timer
+}
+
+function drawSmartBombEffect(ctx) {
+  if (game.smartBombFlash <= 0) return;
+  
+  const progress = 1 - (game.smartBombFlash / 0.4); // 0 -> 1
+  const p = game.player;
+  
+  // Phase 1 (0-0.15): Bright white screen flash
+  if (progress < 0.4) {
+    const flashAlpha = (1 - progress / 0.4) * 0.8;
+    ctx.fillStyle = '#ffffff';
+    ctx.globalAlpha = flashAlpha;
+    ctx.fillRect(0, 0, game.width, game.height);
+    ctx.globalAlpha = 1;
+  }
+  
+  // Phase 2: Expanding shockwave rings from player position
+  const psx = (p.x - game.camX) * game.camZoom;
+  const psy = (p.y - game.camY) * game.camZoom;
+  const maxRing = Math.max(game.width, game.height) * 0.8;
+  
+  // Ring 1 (fast)
+  const r1 = progress * maxRing * 1.2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 4 * (1 - progress);
+  ctx.globalAlpha = (1 - progress) * 0.6;
+  ctx.beginPath();
+  ctx.arc(psx, psy, r1, 0, Math.PI * 2);
+  ctx.stroke();
+  
+  // Ring 2 (medium, cyan tint)
+  const r2 = progress * maxRing * 0.8;
+  ctx.strokeStyle = '#00e5ff';
+  ctx.lineWidth = 3 * (1 - progress);
+  ctx.globalAlpha = (1 - progress) * 0.4;
+  ctx.beginPath();
+  ctx.arc(psx, psy, r2, 0, Math.PI * 2);
+  ctx.stroke();
+  
+  // Ring 3 (slow, yellow)
+  const r3 = progress * maxRing * 0.5;
+  ctx.strokeStyle = '#ffcc00';
+  ctx.lineWidth = 2 * (1 - progress);
+  ctx.globalAlpha = (1 - progress) * 0.3;
+  ctx.beginPath();
+  ctx.arc(psx, psy, r3, 0, Math.PI * 2);
+  ctx.stroke();
+  
+  ctx.globalAlpha = 1;
+}
+
+// ============================================================================
 // 18. WAVE SYSTEM
 // ============================================================================
 
@@ -3195,6 +3360,12 @@ function startNextWave() {
   game.betweenWaves = false;
   
   SFX.waveTransition();
+  
+  // Award smart bombs every 5 waves
+  if (w % 5 === 1 || w === 1) {
+    awardSmartBombs();
+    if (w > 1) spawnFloatingText(game.player.x, game.player.y - 80, `+2 SMART BOMBS!`, '#ffcc00', 12);
+  }
   
   // Show cycle info
   if (isNewCycle && w > 1) {
@@ -3457,6 +3628,23 @@ function drawHUD(ctx) {
   ctx.textAlign = 'left';
   ctx.fillText(`LVL ${p.level}`, 16, xpY - 4);
   
+  // Smart bombs display — bottom center
+  if (game.smartBombs > 0) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = "8px 'Press Start 2P', monospace";
+    ctx.fillText(`BOMBS: ${game.smartBombs}  [${Input.gamepad ? 'RB' : 'SPACE'}]`, w / 2, xpY - 4);
+    // Bomb icons
+    for (let i = 0; i < Math.min(game.smartBombs, 10); i++) {
+      ctx.fillStyle = '#ffcc00';
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath();
+      ctx.arc(w / 2 - 60 + i * 14, xpY - 16, 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  
   // Active weapons — bottom right
   ctx.textAlign = 'right';
   ctx.font = "7px 'Press Start 2P', monospace";
@@ -3689,21 +3877,21 @@ function drawLevelUpUI(ctx) {
   ctx.fillStyle = '#666666';
   ctx.font = "8px 'Press Start 2P', monospace";
   ctx.textAlign = 'center';
-  ctx.fillText(Input.gamepad ? 'D-PAD: SELECT    A: CONFIRM' : 'ARROWS: SELECT    ENTER: CONFIRM', w / 2, h - 50);
+  ctx.fillText(Input.gamepad ? 'STICK/D-PAD: SELECT    A: CONFIRM' : 'ARROWS: SELECT    ENTER: CONFIRM', w / 2, h - 50);
 }
 
 function updateLevelUpInput() {
-  // Navigate
-  if (Input.gpJust(14) || Input.wasPressed('ArrowLeft')) { // D-pad left
+  // Navigate with D-pad, left stick, OR arrow keys
+  if (Input.menuLeft()) {
     levelUpSelection = Math.max(0, levelUpSelection - 1);
     SFX.menuNav();
   }
-  if (Input.gpJust(15) || Input.wasPressed('ArrowRight')) { // D-pad right
+  if (Input.menuRight()) {
     levelUpSelection = Math.min(levelUpOptions.length - 1, levelUpSelection + 1);
     SFX.menuNav();
   }
   
-  // Confirm
+  // Confirm (A button or Enter)
   if (Input.confirmPressed()) {
     selectLevelUpOption(levelUpOptions[levelUpSelection]);
   }
@@ -4071,13 +4259,12 @@ function updateHighScoreEntry(dt) {
   
   // Navigate letters
   let moved = false;
-  // D-pad up or left stick up = next letter
-  if (Input.gpJust(12) || Input.wasPressed('ArrowUp')) {
+  // D-pad, left stick, or arrow keys to cycle letters
+  if (Input.menuUp()) {
     hsEntry.slots[hsEntry.currentSlot] = (hsEntry.slots[hsEntry.currentSlot] + 1) % INITIALS_CHARS.length;
     moved = true;
   }
-  // D-pad down or left stick down = prev letter
-  if (Input.gpJust(13) || Input.wasPressed('ArrowDown')) {
+  if (Input.menuDown()) {
     hsEntry.slots[hsEntry.currentSlot] = (hsEntry.slots[hsEntry.currentSlot] - 1 + INITIALS_CHARS.length) % INITIALS_CHARS.length;
     moved = true;
   }
@@ -4295,6 +4482,10 @@ function resetGame() {
   game.waveHumansLost = 0;
   game.gameOverReason = '';
   game.cycleSurvivorCount = 0;
+  game.smartBombs = 0;
+  game.smartBombFlash = 0;
+  game.smartBombNextAward = 5;
+  game.smartBombBonusThreshold = 500000;
   game.runTime = 0;
   game.nextHpRestore = 25000;
   game.powerScore = 0;
@@ -4405,6 +4596,13 @@ function init() {
           updateHeartbeat(dt);
           updateCamera(dt);
           
+          // Smart bomb trigger (RB = button 5, or Space bar)
+          if (Input.gpJust(5) || Input.wasPressed('Space')) {
+            triggerSmartBomb();
+          }
+          // Update smart bomb flash
+          if (game.smartBombFlash > 0) game.smartBombFlash -= dt;
+          
           // Update particles
           particles.forEach(p => {
             p.x += p.vx * dt;
@@ -4508,6 +4706,9 @@ function init() {
       ctx.fillRect(0, 0, game.width, game.height);
       ctx.globalAlpha = 1;
     }
+    
+    // Smart bomb visual effect (expanding rings + flash)
+    drawSmartBombEffect(ctx);
     
     requestAnimationFrame(gameLoop);
   }
