@@ -9,8 +9,8 @@
 // 1. CONSTANTS & CONFIGURATION
 // ============================================================================
 
-const WORLD_W = 8000;
-const WORLD_H = 8000;
+const WORLD_W = 4800;
+const WORLD_H = 4800;
 const GRID_SIZE = 64;
 const TICK_RATE = 1000 / 60;
 const PLAYER_SPEED = 280;
@@ -507,6 +507,9 @@ const game = {
   waveAnnounce: 0,
   waveClearTimer: 0,
   betweenWaves: false,
+  waveHumansStart: 0, // humans at wave start
+  waveHumansLost: 0,  // humans killed this wave
+  gameOverReason: '', // 'death' or 'humans_lost'
   
   // Enemies
   enemies: [],
@@ -655,6 +658,7 @@ function damagePlayer(amount) {
   if (p.hp <= 0) {
     p.hp = 0;
     p.alive = false;
+    game.gameOverReason = 'death';
     emitParticles(p.x, p.y, 30, C.player, 20, 200, 1.0, 4);
     emitParticles(p.x, p.y, 20, '#ffffff', 15, 150, 0.8, 3);
     SFX.playerDeath();
@@ -850,113 +854,157 @@ function updateEnemies(dt) {
     
     switch (e.type) {
       case 'grunt': {
-        // Chase player
+        // Grunts: relentless direct chase toward player, slight weaving
+        // They also trample humans on contact (like Robotron)
+        e.special._weaveT = (e.special._weaveT || 0) + dt;
+        const weave = Math.sin(e.special._weaveT * 3 + e.x * 0.01) * 15;
         if (d > 0) {
-          e.vx = (dx / d) * e.speed;
-          e.vy = (dy / d) * e.speed;
+          const perpX = -dy / d, perpY = dx / d;
+          e.vx = (dx / d) * e.speed + perpX * weave;
+          e.vy = (dy / d) * e.speed + perpY * weave;
+        }
+        // Speed up when closer to player (Robotron urgency)
+        if (d < 200) {
+          e.vx *= 1.3;
+          e.vy *= 1.3;
         }
         break;
       }
       case 'hulk': {
-        // Slow chase player, also goes toward nearest human
+        // Hulk: lumbering, ALWAYS hunts nearest human first (primary threat to humans)
+        // Only chases player if no humans nearby
         let tx = p.x, ty = p.y;
         let nearestHumanDist = Infinity;
         for (const h of game.humans) {
           const hd = dist(e.x, e.y, h.x, h.y);
-          if (hd < nearestHumanDist) {
-            nearestHumanDist = hd;
-            tx = h.x; ty = h.y;
-          }
+          if (hd < nearestHumanDist) { nearestHumanDist = hd; tx = h.x; ty = h.y; }
         }
-        if (nearestHumanDist < 400) {
-          // Go for human
-        } else {
-          tx = p.x; ty = p.y;
-        }
+        // Hulks always prefer humans within 600px, otherwise drift toward player
+        if (nearestHumanDist > 600) { tx = p.x; ty = p.y; }
         const hdx = tx - e.x, hdy = ty - e.y;
         const hd2 = Math.hypot(hdx, hdy);
         if (hd2 > 0) {
           e.vx = (hdx / hd2) * e.speed;
           e.vy = (hdy / hd2) * e.speed;
         }
+        // Pulsing movement: slow/fast cycle for menacing feel
+        const hulkPulse = 0.7 + Math.sin(game.time * 1.5 + e.x * 0.005) * 0.3;
+        e.vx *= hulkPulse;
+        e.vy *= hulkPulse;
         break;
       }
       case 'electrode': {
-        // Static — no movement
+        // Static hazard — no movement, just visual pulsing
         e.special.colorTimer += dt;
         e.vx = 0; e.vy = 0;
         break;
       }
       case 'spheroid': {
-        // Float semi-randomly
-        if (e.animTimer > 1.5) {
-          e.vx = randF(-1, 1) * e.speed;
-          e.vy = randF(-1, 1) * e.speed;
-          e.animTimer = 0;
-        }
-        // Spawn enforcers
-        e.special.spawnTimer -= dt;
+        // Spheroid: floats in lazy figure-8 / sine patterns, not random
+        // This gives them the distinctive drifting feel from Robotron
         e.special.pulseTimer += dt;
+        e.special._pathT = (e.special._pathT || randF(0, 100)) + dt;
+        const pt = e.special._pathT;
+        e.vx = Math.sin(pt * 0.8) * e.speed * 0.9;
+        e.vy = Math.cos(pt * 1.1) * e.speed * 0.7;
+        // Drift toward player slowly
+        if (d > 0) { e.vx += (dx / d) * 12; e.vy += (dy / d) * 12; }
+        // Spawn enforcers — pulse larger before spawning
+        e.special.spawnTimer -= dt;
         if (e.special.spawnTimer <= 0) {
-          const enf = createEnemy('enforcer', e.x + randF(-20, 20), e.y + randF(-20, 20));
+          const enf = createEnemy('enforcer', e.x + randF(-30, 30), e.y + randF(-30, 30));
           enf.spawnTimer = 0.3;
           game.enemies.push(enf);
-          e.special.spawnTimer = randF(4, 8);
+          e.special.spawnTimer = randF(3, 6);
           game.waveEnemiesTotal++;
+          emitParticles(e.x, e.y, 4, C.spheroid, 10, 60, 0.3, 3);
         }
         break;
       }
       case 'enforcer': {
-        // Erratic diagonal movement
-        e.special.jitterX += randF(-500, 500) * dt;
-        e.special.jitterY += randF(-500, 500) * dt;
-        e.special.jitterX *= 0.95;
-        e.special.jitterY *= 0.95;
-        if (d > 0) {
-          e.vx = (dx / d) * e.speed * 0.5 + e.special.jitterX;
-          e.vy = (dy / d) * e.speed * 0.5 + e.special.jitterY;
-        }
-        // Fire sparks
+        // Enforcer: erratic strafing movement, jitters, fires sparks at player
+        // Diagonal preference like in Robotron — they don't chase directly
+        e.special.jitterX += randF(-800, 800) * dt;
+        e.special.jitterY += randF(-800, 800) * dt;
+        e.special.jitterX *= 0.92;
+        e.special.jitterY *= 0.92;
+        // Strafe around player at medium distance rather than direct chase
+        const perpX = -dy / (d || 1), perpY = dx / (d || 1);
+        const strafeDir = Math.sin(e.animTimer * 2 + e.y * 0.01) > 0 ? 1 : -1;
+        e.vx = perpX * e.speed * 0.6 * strafeDir + (dx / (d || 1)) * e.speed * 0.25 + e.special.jitterX;
+        e.vy = perpY * e.speed * 0.6 * strafeDir + (dy / (d || 1)) * e.speed * 0.25 + e.special.jitterY;
+        // Fire sparks — more aggressive
         e.special.fireTimer -= dt;
-        if (e.special.fireTimer <= 0 && d < 600) {
-          fireEnemyBullet(e.x, e.y, p.x, p.y, 300, 10, 'spark');
-          e.special.fireTimer = randF(1.5, 3);
+        if (e.special.fireTimer <= 0 && d < 500) {
+          fireEnemyBullet(e.x, e.y, p.x, p.y, 320, 10, 'spark');
+          e.special.fireTimer = randF(0.8, 2.0);
+          emitParticles(e.x, e.y, 2, C.enforcerSpark, 5, 40, 0.15, 2);
         }
         break;
       }
       case 'quark': {
-        // Swirling movement
-        e.special.spinAngle += dt * 3;
-        e.vx = Math.cos(e.special.spinAngle) * e.speed + (dx / (d || 1)) * 20;
-        e.vy = Math.sin(e.special.spinAngle) * e.speed + (dy / (d || 1)) * 20;
-        // Spawn tanks
+        // Quark: chaotic spiraling movement — fast, unpredictable, hard to hit
+        // Distinctive swirling pattern that's very different from straight-line enemies
+        e.special.spinAngle += dt * (3 + Math.sin(game.time + e.x) * 2);
+        const spiralR = 40 + Math.sin(e.special.spinAngle * 0.5) * 30;
+        e.vx = Math.cos(e.special.spinAngle) * e.speed * 1.2 + (dx / (d || 1)) * 25;
+        e.vy = Math.sin(e.special.spinAngle) * e.speed * 1.2 + (dy / (d || 1)) * 25;
+        // Sudden direction reversals (makes them hard to predict)
+        if (Math.random() < 0.005) { e.vx *= -1; e.vy *= -1; }
+        // Spawn tanks — shudder before spawning
         e.special.spawnTimer -= dt;
         if (e.special.spawnTimer <= 0) {
-          const t = createEnemy('tank', e.x + randF(-30, 30), e.y + randF(-30, 30));
+          const t = createEnemy('tank', e.x + randF(-40, 40), e.y + randF(-40, 40));
           t.spawnTimer = 0.5;
           game.enemies.push(t);
-          e.special.spawnTimer = randF(5, 9);
+          e.special.spawnTimer = randF(4, 7);
           game.waveEnemiesTotal++;
+          emitParticles(e.x, e.y, 5, C.quark, 12, 80, 0.3, 3);
         }
         break;
       }
       case 'tank': {
-        // Slow chase + fire bouncing shells
-        if (d > 0) {
+        // Tank: slow, deliberate, stops to aim before firing
+        // Turret tracks player smoothly — visible aiming behavior
+        const targetAngle = Math.atan2(dy, dx);
+        // Smooth turret rotation
+        let angleDiff = targetAngle - e.special.turretAngle;
+        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+        e.special.turretAngle += angleDiff * 2.5 * dt;
+        // Move toward player but stop at medium range to fire
+        if (d > 250) {
           e.vx = (dx / d) * e.speed;
           e.vy = (dy / d) * e.speed;
+        } else if (d < 150) {
+          // Back away slightly if too close
+          e.vx = -(dx / d) * e.speed * 0.5;
+          e.vy = -(dy / d) * e.speed * 0.5;
+        } else {
+          // Hold position, strafe slightly
+          const tp = -dy / d, tq = dx / d;
+          e.vx = tp * e.speed * 0.3 * Math.sin(game.time + e.x);
+          e.vy = tq * e.speed * 0.3 * Math.sin(game.time + e.x);
         }
-        e.special.turretAngle = Math.atan2(dy, dx);
+        // Fire bouncing shells
         e.special.fireTimer -= dt;
-        if (e.special.fireTimer <= 0 && d < 700) {
-          const b = fireEnemyBullet(e.x, e.y, p.x, p.y, 250, 10, 'shell');
-          if (b) { b.maxBounces = 1; b.bounces = 0; }
-          e.special.fireTimer = randF(2.5, 4.5);
+        if (e.special.fireTimer <= 0 && d < 600) {
+          const b = fireEnemyBullet(e.x, e.y, 
+            e.x + Math.cos(e.special.turretAngle) * 100,
+            e.y + Math.sin(e.special.turretAngle) * 100, 280, 12, 'shell');
+          if (b) { b.maxBounces = 2; b.bounces = 0; }
+          e.special.fireTimer = randF(1.8, 3.5);
+          // Recoil
+          e.vx -= Math.cos(e.special.turretAngle) * 30;
+          e.vy -= Math.sin(e.special.turretAngle) * 30;
+          emitParticles(e.x + Math.cos(e.special.turretAngle) * e.size, 
+            e.y + Math.sin(e.special.turretAngle) * e.size, 3, '#ffff44', 8, 60, 0.15, 2);
         }
         break;
       }
       case 'brain': {
-        // Hunt humans first, then player
+        // Brain: the most dangerous — actively hunts humans to convert them to Progs
+        // When no humans nearby, chases player and fires cruise missiles
         e.special.shimmerTimer += dt;
         let target = null;
         let nearDist = Infinity;
@@ -964,36 +1012,47 @@ function updateEnemies(dt) {
           const bd = dist(e.x, e.y, h.x, h.y);
           if (bd < nearDist) { nearDist = bd; target = h; }
         }
-        if (target && nearDist < 500) {
+        if (target && nearDist < 800) {
+          // Beeline for human — faster than normal when hunting
           const bdx = target.x - e.x, bdy = target.y - e.y;
           const bd = Math.hypot(bdx, bdy);
-          e.vx = (bdx / bd) * e.speed;
-          e.vy = (bdy / bd) * e.speed;
-          // Capture human on contact
+          e.vx = (bdx / bd) * e.speed * 1.3;
+          e.vy = (bdy / bd) * e.speed * 1.3;
+          // Capture human on contact — convert to Prog!
           if (nearDist < e.size + 10) {
             convertHumanToProg(target);
+            // Brief pause after capture
+            e.vx *= 0.1; e.vy *= 0.1;
           }
         } else {
+          // Chase player with slight wobble
           if (d > 0) {
-            e.vx = (dx / d) * e.speed;
-            e.vy = (dy / d) * e.speed;
+            const wobble = Math.sin(e.special.shimmerTimer * 3) * 20;
+            e.vx = (dx / d) * e.speed + (-dy / d) * wobble;
+            e.vy = (dy / d) * e.speed + (dx / d) * wobble;
           }
         }
-        // Fire cruise missiles
+        // Fire cruise missiles — more aggressively
         e.special.fireTimer -= dt;
-        if (e.special.fireTimer <= 0 && d < 600) {
-          const b = fireEnemyBullet(e.x, e.y, p.x, p.y, 180, 15, 'cruise');
-          e.special.fireTimer = randF(3, 5);
+        if (e.special.fireTimer <= 0 && d < 700) {
+          fireEnemyBullet(e.x, e.y, p.x, p.y, 200, 15, 'cruise');
+          e.special.fireTimer = randF(2, 4);
+          emitParticles(e.x, e.y, 3, '#ff4466', 8, 50, 0.2, 2);
         }
         break;
       }
       case 'prog': {
-        // Aggressively chase player
+        // Prog: reprogrammed human — faster than grunts, very aggressive
+        // Zigzags toward player with glitchy movement
         e.special.glitchTimer += dt;
         if (d > 0) {
-          e.vx = (dx / d) * e.speed;
-          e.vy = (dy / d) * e.speed;
+          const zigzag = Math.sin(e.special.glitchTimer * 8) * 40;
+          const perpX2 = -dy / d, perpY2 = dx / d;
+          e.vx = (dx / d) * e.speed + perpX2 * zigzag;
+          e.vy = (dy / d) * e.speed + perpY2 * zigzag;
         }
+        // Occasional glitch teleport (short hop, 2-3px)
+        if (Math.random() < 0.02) { e.x += randF(-8, 8); e.y += randF(-8, 8); }
         break;
       }
     }
@@ -1011,19 +1070,19 @@ function updateEnemies(dt) {
       const contactDist = e.size + PLAYER_SIZE;
       if (dist(e.x, e.y, p.x, p.y) < contactDist) {
         if (e.special.static) {
-          // Electrodes: instant big damage
-          damagePlayer(30);
+          damagePlayer(30); // Electrodes: big damage
         } else if (e.special.invincible) {
-          // Hulk: push back, damage
-          damagePlayer(15);
+          damagePlayer(15); // Hulk
         } else {
           damagePlayer(10);
         }
       }
     }
     
-    // Hulk kills humans
-    if (e.type === 'hulk') {
+    // ALL enemies kill humans on contact (not just Hulks)
+    // Grunts trample, Hulks crush, Enforcers/Tanks/Progs collide
+    // Only Brains convert (handled above), Electrodes are static
+    if (e.type !== 'brain' && e.type !== 'electrode' && e.spawnTimer <= 0) {
       for (let j = game.humans.length - 1; j >= 0; j--) {
         const h = game.humans[j];
         if (dist(e.x, e.y, h.x, h.y) < e.size + 8) {
@@ -1261,19 +1320,29 @@ function spawnHumans(count) {
   const types = ['mommy', 'daddy', 'mikey'];
   const colors = { mommy: C.mommy, daddy: C.daddy, mikey: C.mikey };
   const sizes = { mommy: 9, daddy: 10, mikey: 7 };
+  const speeds = { mommy: 55, daddy: 50, mikey: 70 }; // Mikey is fastest (small child running)
   
   for (let i = 0; i < count; i++) {
     const type = types[randI(0, 2)];
     const x = randF(200, WORLD_W - 200);
     const y = randF(200, WORLD_H - 200);
-    // Don't spawn on player
     if (dist(x, y, game.player.x, game.player.y) < 200) continue;
     game.humans.push({
       type, x, y, vx: 0, vy: 0,
       color: colors[type], size: sizes[type],
+      speed: speeds[type],
       wanderTimer: 0, alive: true,
+      // Robotron-style movement state
+      moveAngle: randF(0, Math.PI * 2), // current wander direction
+      panicTimer: 0,   // > 0 = fleeing from nearby enemy
+      panicDirX: 0, panicDirY: 0,
+      animTimer: 0,
+      animFrame: 0,
     });
   }
+  // Track wave human count
+  game.waveHumansStart = game.humans.length;
+  game.waveHumansLost = 0;
 }
 
 function updateHumans(dt) {
@@ -1282,22 +1351,94 @@ function updateHumans(dt) {
     const h = game.humans[i];
     if (!h.alive) { game.humans.splice(i, 1); continue; }
     
-    // Wander
-    h.wanderTimer -= dt;
-    if (h.wanderTimer <= 0) {
-      h.vx = randF(-30, 30);
-      h.vy = randF(-30, 30);
-      h.wanderTimer = randF(1, 3);
+    h.animTimer += dt;
+    
+    // ---- Robotron-style panicked wandering ----
+    // Humans wander aimlessly, but PANIC when an enemy is nearby
+    // They run in short bursts, change direction suddenly, bump off walls
+    // This creates the frantic, helpless feel from the original
+    
+    // Check for nearby enemies -> panic flee
+    h.panicTimer -= dt;
+    let nearestEnemyDist = Infinity;
+    let nearestEnemyX = 0, nearestEnemyY = 0;
+    for (const e of game.enemies) {
+      if (!e.active || e.spawnTimer > 0 || e.type === 'electrode') continue;
+      const ed = dist(h.x, h.y, e.x, e.y);
+      if (ed < nearestEnemyDist) {
+        nearestEnemyDist = ed;
+        nearestEnemyX = e.x;
+        nearestEnemyY = e.y;
+      }
     }
+    
+    const panicRange = 120;
+    if (nearestEnemyDist < panicRange) {
+      // PANIC! Flee away from enemy
+      const fleeX = h.x - nearestEnemyX;
+      const fleeY = h.y - nearestEnemyY;
+      const fleeDist = Math.hypot(fleeX, fleeY);
+      if (fleeDist > 0) {
+        h.panicDirX = fleeX / fleeDist;
+        h.panicDirY = fleeY / fleeDist;
+      }
+      h.panicTimer = randF(0.3, 0.8); // Panic burst duration
+    }
+    
+    if (h.panicTimer > 0) {
+      // Panicked running — faster, with jitter
+      const panicSpeed = h.speed * 1.8;
+      h.vx = h.panicDirX * panicSpeed + randF(-20, 20);
+      h.vy = h.panicDirY * panicSpeed + randF(-20, 20);
+    } else {
+      // Normal Robotron wander: walk in a direction, then suddenly change
+      h.wanderTimer -= dt;
+      if (h.wanderTimer <= 0) {
+        // New random direction — sharp turns, not gradual
+        h.moveAngle = randF(0, Math.PI * 2);
+        h.wanderTimer = randF(0.4, 1.5); // Short bursts of movement
+        // Occasionally stop briefly (humans in Robotron pause momentarily)
+        if (Math.random() < 0.2) {
+          h.vx = 0; h.vy = 0;
+          h.wanderTimer = randF(0.2, 0.6);
+        } else {
+          h.vx = Math.cos(h.moveAngle) * h.speed;
+          h.vy = Math.sin(h.moveAngle) * h.speed;
+        }
+      }
+    }
+    
     h.x += h.vx * dt;
     h.y += h.vy * dt;
-    h.x = clamp(h.x, 50, WORLD_W - 50);
-    h.y = clamp(h.y, 50, WORLD_H - 50);
+    
+    // Bounce off world edges (Robotron humans bounce, not clamp)
+    if (h.x < 50) { h.x = 50; h.vx = Math.abs(h.vx); h.moveAngle = randF(-Math.PI/3, Math.PI/3); }
+    if (h.x > WORLD_W - 50) { h.x = WORLD_W - 50; h.vx = -Math.abs(h.vx); h.moveAngle = randF(Math.PI*2/3, Math.PI*4/3); }
+    if (h.y < 50) { h.y = 50; h.vy = Math.abs(h.vy); h.moveAngle = randF(Math.PI/6, Math.PI*5/6); }
+    if (h.y > WORLD_H - 50) { h.y = WORLD_H - 50; h.vy = -Math.abs(h.vy); h.moveAngle = randF(-Math.PI*5/6, -Math.PI/6); }
+    
+    // Walk animation
+    if (Math.abs(h.vx) > 1 || Math.abs(h.vy) > 1) {
+      if (h.animTimer > 0.12) { h.animFrame = (h.animFrame + 1) % 4; h.animTimer = 0; }
+    } else {
+      h.animFrame = 0;
+    }
     
     // Rescue on player contact
     if (p.alive && dist(h.x, h.y, p.x, p.y) < PLAYER_SIZE + h.size) {
       rescueHuman(h, i);
     }
+  }
+  
+  // FAIL STATE: all humans eliminated = Game Over
+  if (game.humans.length === 0 && game.waveHumansStart > 0 && game.state === 'playing' && !game.betweenWaves) {
+    game.player.alive = false;
+    game.gameOverReason = 'humans_lost';
+    emitParticles(game.player.x, game.player.y, 15, '#ff4444', 15, 100, 0.6, 3);
+    game.shakeTimer = 0.4;
+    game.shakeIntensity = 6;
+    SFX.playerDeath();
+    setTimeout(() => { game.state = 'gameover'; }, 1500);
   }
 }
 
@@ -1322,8 +1463,16 @@ function rescueHuman(h, index) {
 function killHuman(h, index) {
   h.alive = false;
   game.humans.splice(index, 1);
-  emitParticles(h.x, h.y, 5, h.color, 10, 60, 0.4, 2);
+  game.waveHumansLost++;
+  
+  emitParticles(h.x, h.y, 8, h.color, 15, 80, 0.5, 3);
+  emitParticles(h.x, h.y, 4, '#ff0000', 10, 60, 0.3, 2);
+  spawnFloatingText(h.x, h.y - 10, 'HUMAN LOST', '#ff4444', 9);
   SFX.humanDeath();
+  
+  // Screen flash red when human dies (subtle urgency)
+  game.flashTimer = 0.1;
+  game.flashColor = '#ff000030';
 }
 
 function convertHumanToProg(h) {
@@ -1331,6 +1480,7 @@ function convertHumanToProg(h) {
   if (idx < 0) return;
   h.alive = false;
   game.humans.splice(idx, 1);
+  game.waveHumansLost++;
   
   // Spawn a Prog at the human's location
   const prog = createEnemy('prog', h.x, h.y);
@@ -1340,6 +1490,7 @@ function convertHumanToProg(h) {
   game.waveEnemiesRemaining++;
   
   emitParticles(h.x, h.y, 8, '#ff2222', 15, 80, 0.3, 3);
+  spawnFloatingText(h.x, h.y - 10, 'CONVERTED!', '#cc44cc', 10);
 }
 
 function drawHumans(ctx) {
@@ -1349,15 +1500,37 @@ function drawHumans(ctx) {
     ctx.translate(h.x, h.y);
     
     const s = h.size;
-    ctx.fillStyle = h.color;
+    const isPanic = h.panicTimer > 0;
     
-    // Body
-    ctx.fillRect(-s * 0.4, -s * 0.3, s * 0.8, s * 0.8);
+    // Flash when panicking
+    if (isPanic && Math.floor(h.panicTimer * 8) % 2 === 0) {
+      ctx.fillStyle = '#ffffff';
+    } else {
+      ctx.fillStyle = h.color;
+    }
+    
+    // Animated humanoid — legs move, arms wave when panicking
+    const legOff = Math.sin(h.animFrame * Math.PI / 2) * s * 0.25;
+    
     // Head
-    ctx.fillRect(-s * 0.3, -s * 0.8, s * 0.6, s * 0.5);
-    // Legs
-    ctx.fillRect(-s * 0.3, s * 0.5, s * 0.25, s * 0.3);
-    ctx.fillRect(s * 0.05, s * 0.5, s * 0.25, s * 0.3);
+    ctx.fillRect(-s * 0.25, -s * 1.0, s * 0.5, s * 0.4);
+    // Body
+    ctx.fillRect(-s * 0.3, -s * 0.6, s * 0.6, s * 0.7);
+    // Arms
+    if (isPanic) {
+      // Waving arms — panic!
+      const armAngle = Math.sin(h.animTimer * 12) * 0.5;
+      ctx.fillRect(-s * 0.55, -s * 0.5 + Math.sin(h.animTimer * 10) * 3, s * 0.2, s * 0.4);
+      ctx.fillRect(s * 0.35, -s * 0.5 - Math.sin(h.animTimer * 10) * 3, s * 0.2, s * 0.4);
+    } else {
+      ctx.fillRect(-s * 0.5, -s * 0.45, s * 0.18, s * 0.35);
+      ctx.fillRect(s * 0.32, -s * 0.45, s * 0.18, s * 0.35);
+    }
+    // Legs (animated walk)
+    const darkColor = h.type === 'mommy' ? '#cc4477' : h.type === 'daddy' ? '#336699' : '#999933';
+    ctx.fillStyle = darkColor;
+    ctx.fillRect(-s * 0.25, s * 0.1, s * 0.2, s * 0.4 + legOff);
+    ctx.fillRect(s * 0.05, s * 0.1, s * 0.2, s * 0.4 - legOff);
     
     ctx.restore();
   }
@@ -2481,10 +2654,14 @@ function updateWaveSystem(dt) {
     }
     if (killable <= 0) {
       game.betweenWaves = true;
-      game.waveClearTimer = 3.0;
+      game.waveClearTimer = 3.5;
       SFX.waveClear();
       game.player.score += 500 * game.wave;
+      const saved = game.player.rescueCount;
+      const lost = game.waveHumansLost;
+      const total = saved + lost + game.humans.length;
       spawnFloatingText(game.player.x, game.player.y - 40, `WAVE ${game.wave} CLEAR! +${500 * game.wave}`, C.textYellow, 16);
+      spawnFloatingText(game.player.x, game.player.y - 15, `HUMANS SAVED: ${saved} / ${total}`, saved > 0 ? '#44ff44' : '#ff4444', 11);
     }
   }
 }
@@ -2619,6 +2796,17 @@ function drawHUD(ctx) {
   ctx.font = "bold 14px 'Press Start 2P', monospace";
   ctx.fillStyle = C.textWhite;
   ctx.fillText(`WAVE ${game.wave}`, w - 16, 30);
+  
+  // Human count — under wave, top right (critical info: if this hits 0, game over)
+  const humansAlive = game.humans.length;
+  ctx.font = "9px 'Press Start 2P', monospace";
+  ctx.fillStyle = humansAlive <= 3 ? '#ff4444' : humansAlive <= 8 ? '#ffcc00' : '#44ff44';
+  ctx.fillText(`HUMANS: ${humansAlive}`, w - 16, 46);
+  // Flash warning when low
+  if (humansAlive <= 3 && humansAlive > 0 && Math.floor(game.time * 3) % 2 === 0) {
+    ctx.fillStyle = '#ff0000';
+    ctx.fillText('!! SAVE THEM !!', w - 16, 60);
+  }
   
   // HP bar — bottom left
   const hpBarW = 200;
@@ -2926,10 +3114,19 @@ function drawGameOver(ctx) {
   
   ctx.textAlign = 'center';
   
-  // GAME OVER
+  // GAME OVER + reason
   ctx.fillStyle = '#ff4444';
   ctx.font = "bold 32px 'Press Start 2P', monospace";
-  ctx.fillText('GAME OVER', w / 2, h * 0.2);
+  ctx.fillText('GAME OVER', w / 2, h * 0.15);
+  
+  // Reason
+  ctx.font = "10px 'Press Start 2P', monospace";
+  ctx.fillStyle = '#ff8888';
+  if (game.gameOverReason === 'humans_lost') {
+    ctx.fillText('ALL HUMANS WERE LOST', w / 2, h * 0.22);
+  } else {
+    ctx.fillText('YOU WERE DESTROYED', w / 2, h * 0.22);
+  }
   
   // Stats
   ctx.fillStyle = C.textWhite;
@@ -2939,6 +3136,7 @@ function drawGameOver(ctx) {
     `WAVE: ${game.wave}`,
     `LEVEL: ${p.level}`,
     `HUMANS SAVED: ${p.totalRescues}`,
+    `HUMANS LOST: ${game.waveHumansLost}`,
     `ENEMIES DESTROYED: ${p.totalKills}`,
     `TIME: ${Math.floor(game.runTime / 60)}m ${Math.floor(game.runTime % 60)}s`,
   ];
@@ -2993,6 +3191,9 @@ function resetGame() {
   game.wave = 0;
   game.waveAnnounce = 0;
   game.betweenWaves = false;
+  game.waveHumansStart = 0;
+  game.waveHumansLost = 0;
+  game.gameOverReason = '';
   game.runTime = 0;
   game.nextHpRestore = 25000;
   game.powerScore = 0;
