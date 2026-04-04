@@ -4596,6 +4596,14 @@ function init() {
           updateHeartbeat(dt);
           updateCamera(dt);
           
+          // Smart bomb bonus: +1 bomb per 500,000 points (checked every frame)
+          while (game.player.score >= game.smartBombBonusThreshold) {
+            game.smartBombs++;
+            game.smartBombBonusThreshold += 500000;
+            spawnFloatingText(game.player.x, game.player.y - 50, '+1 SMART BOMB!', '#ffcc00', 14);
+            SFX.levelUp();
+          }
+          
           // Smart bomb trigger (RB = button 5, or Space bar)
           if (Input.gpJust(5) || Input.wasPressed('Space')) {
             triggerSmartBomb();
