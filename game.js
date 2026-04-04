@@ -752,6 +752,7 @@ const game = {
   gameOverReason: '', // 'death' or 'humans_lost'
   humanDeathPopTimer: 0,
   humanDeathPopCount: 0,
+  cycleSurvivorCount: 0, // tracks survivors across the 5-wave cycle
   
   // Enemies
   enemies: [],
@@ -976,53 +977,53 @@ function createEnemy(type, x, y) {
   switch (type) {
     case 'grunt':
       e.hp = 1; e.speed = 80 + randF(-10, 10);
-      e.size = 10; e.color = C.grunt;
+      e.size = 16; e.color = C.grunt;
       e.points = 100; e.gemType = 'small';
       break;
     case 'hulk':
       e.hp = 9999; e.maxHp = 9999; e.speed = 40;
-      e.size = 18; e.color = C.hulk;
+      e.size = 28; e.color = C.hulk;
       e.points = 0; e.gemType = 'none';
       e.special.invincible = true;
       break;
     case 'electrode':
       e.hp = 1; e.speed = 0;
-      e.size = 8; e.color = C.electrode;
+      e.size = 12; e.color = C.electrode;
       e.points = 25; e.gemType = 'small';
       e.special.static = true;
       e.special.colorTimer = 0;
       break;
     case 'spheroid':
       e.hp = 2; e.speed = 60;
-      e.size = 14; e.color = C.spheroid;
+      e.size = 20; e.color = C.spheroid;
       e.points = 1000; e.gemType = 'large';
       e.special.spawnTimer = randF(3, 6);
       e.special.pulseTimer = 0;
       break;
     case 'enforcer':
       e.hp = 1; e.speed = 100;
-      e.size = 8; e.color = C.enforcer;
+      e.size = 14; e.color = C.enforcer;
       e.points = 150; e.gemType = 'small';
       e.special.fireTimer = randF(1, 3);
       e.special.jitterX = 0; e.special.jitterY = 0;
       break;
     case 'quark':
       e.hp = 2; e.speed = 70;
-      e.size = 12; e.color = C.quark;
+      e.size = 18; e.color = C.quark;
       e.points = 1000; e.gemType = 'large';
       e.special.spawnTimer = randF(3, 6);
       e.special.spinAngle = 0;
       break;
     case 'tank':
       e.hp = 2; e.speed = 50;
-      e.size = 14; e.color = C.tank;
+      e.size = 22; e.color = C.tank;
       e.points = 200; e.gemType = 'med';
       e.special.fireTimer = randF(2, 4);
       e.special.turretAngle = 0;
       break;
     case 'brain':
       e.hp = 3; e.speed = 65;
-      e.size = 14; e.color = C.brain;
+      e.size = 20; e.color = C.brain;
       e.points = 500; e.gemType = 'large';
       e.special.fireTimer = randF(2, 4);
       e.special.shimmerTimer = 0;
@@ -1437,178 +1438,324 @@ function drawEnemies(ctx) {
     if (e.spawnTimer > 0) {
       const prog = 1 - (e.spawnTimer / 0.6);
       ctx.globalAlpha = prog * 0.7;
-      // Scatter pixels effect
-      for (let i = 0; i < 8; i++) {
-        const angle = (i / 8) * Math.PI * 2 + game.time * 5;
-        const dist = e.size * (1 - prog) * 2;
+      for (let i = 0; i < 10; i++) {
+        const a2 = (i / 10) * Math.PI * 2 + game.time * 5;
+        const d2 = e.size * (1 - prog) * 2.5;
         ctx.fillStyle = e.color;
-        ctx.fillRect(
-          Math.cos(angle) * dist - 2,
-          Math.sin(angle) * dist - 2,
-          4, 4
-        );
+        ctx.fillRect(Math.cos(a2) * d2 - 2, Math.sin(a2) * d2 - 2, 4, 4);
       }
       ctx.restore();
       continue;
     }
     
-    // Flash on damage
-    if (e.special._flashTimer > 0) {
-      e.special._flashTimer -= 1/60;
-      ctx.fillStyle = '#ffffff';
-    } else {
-      ctx.fillStyle = e.color;
-    }
-    
+    const flash = e.special._flashTimer > 0;
+    if (flash) e.special._flashTimer -= 1/60;
     const s = e.size;
     
     switch (e.type) {
       case 'grunt': {
-        // Simple walking humanoid
-        ctx.fillRect(-s * 0.5, -s * 0.5, s, s);
-        ctx.fillStyle = C.gruntDark;
-        const legOff = Math.sin(e.animTimer * 8) * 3;
-        ctx.fillRect(-s * 0.4, s * 0.3, s * 0.3, s * 0.4 + legOff);
-        ctx.fillRect(s * 0.1, s * 0.3, s * 0.3, s * 0.4 - legOff);
+        // GRUNT: Humanoid robot foot soldier — box head, antenna, legs
+        const col = flash ? '#ffffff' : C.grunt;
+        const dark = flash ? '#cccccc' : C.gruntDark;
+        const leg = Math.sin(e.animTimer * 8) * s * 0.15;
+        // Legs
+        ctx.fillStyle = dark;
+        ctx.fillRect(-s * 0.35, s * 0.1, s * 0.25, s * 0.5 + leg);
+        ctx.fillRect(s * 0.1, s * 0.1, s * 0.25, s * 0.5 - leg);
+        // Body (torso)
+        ctx.fillStyle = col;
+        ctx.fillRect(-s * 0.4, -s * 0.4, s * 0.8, s * 0.6);
+        // Chest detail
+        ctx.fillStyle = dark;
+        ctx.fillRect(-s * 0.15, -s * 0.25, s * 0.3, s * 0.2);
+        // Head (box with visor)
+        ctx.fillStyle = col;
+        ctx.fillRect(-s * 0.3, -s * 0.75, s * 0.6, s * 0.38);
+        // Visor (eyes)
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(-s * 0.22, -s * 0.65, s * 0.44, s * 0.12);
+        ctx.fillStyle = '#ff4466';
+        ctx.fillRect(-s * 0.18, -s * 0.63, s * 0.14, s * 0.08);
+        ctx.fillRect(s * 0.06, -s * 0.63, s * 0.14, s * 0.08);
+        // Antenna
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, -s * 0.75);
+        ctx.lineTo(0, -s * 0.95);
+        ctx.stroke();
+        ctx.fillStyle = '#ff4466';
+        ctx.beginPath();
+        ctx.arc(0, -s * 0.97, 2, 0, Math.PI * 2);
+        ctx.fill();
         break;
       }
       case 'hulk': {
-        // Large chunky
-        const pulse = 1 + Math.sin(game.time * 2) * 0.05;
+        // HULK: Massive armored robot — wide body, thick arms, glowing core
+        const col = flash ? '#ffffff' : C.hulk;
+        const pulse = 1 + Math.sin(game.time * 2) * 0.03;
         ctx.scale(pulse, pulse);
-        ctx.fillRect(-s * 0.6, -s * 0.6, s * 1.2, s * 1.2);
+        // Legs (thick)
+        ctx.fillStyle = '#116622';
+        ctx.fillRect(-s * 0.4, s * 0.2, s * 0.3, s * 0.45);
+        ctx.fillRect(s * 0.1, s * 0.2, s * 0.3, s * 0.45);
+        // Body (wide armored torso)
+        ctx.fillStyle = col;
+        ctx.fillRect(-s * 0.55, -s * 0.45, s * 1.1, s * 0.75);
+        // Armor plating lines
+        ctx.strokeStyle = '#44ff66';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-s * 0.5, -s * 0.4, s * 1.0, s * 0.65);
+        // Arms (heavy, hang down)
         ctx.fillStyle = C.hulkArm;
-        ctx.fillRect(-s * 0.8, -s * 0.2, s * 0.25, s * 0.6);
-        ctx.fillRect(s * 0.55, -s * 0.2, s * 0.25, s * 0.6);
+        ctx.fillRect(-s * 0.75, -s * 0.2, s * 0.22, s * 0.6);
+        ctx.fillRect(s * 0.53, -s * 0.2, s * 0.22, s * 0.6);
+        // Fists
+        ctx.fillStyle = '#dddd22';
+        ctx.fillRect(-s * 0.78, s * 0.35, s * 0.28, s * 0.15);
+        ctx.fillRect(s * 0.5, s * 0.35, s * 0.28, s * 0.15);
+        // Head (small on big body)
+        ctx.fillStyle = col;
+        ctx.fillRect(-s * 0.25, -s * 0.7, s * 0.5, s * 0.3);
+        // Eyes (angry slits)
+        ctx.fillStyle = '#ff0000';
+        ctx.fillRect(-s * 0.18, -s * 0.6, s * 0.12, s * 0.06);
+        ctx.fillRect(s * 0.06, -s * 0.6, s * 0.12, s * 0.06);
+        // Glowing core
+        ctx.fillStyle = '#88ff88';
+        ctx.globalAlpha = 0.5 + Math.sin(game.time * 3) * 0.3;
+        ctx.beginPath();
+        ctx.arc(0, -s * 0.1, s * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
         break;
       }
       case 'electrode': {
-        // Pulsating hazard
+        // ELECTRODE: Crackling energy hazard — spiky, pulsing
         const t = e.special.colorTimer;
-        ctx.fillStyle = Math.floor(t * 4) % 2 === 0 ? C.electrode : C.electrodePulse;
         const ep = 1 + Math.sin(t * 8) * 0.15;
         ctx.scale(ep, ep);
-        ctx.fillRect(-s, -s, s * 2, s * 2);
-        ctx.fillStyle = Math.floor(t * 4) % 2 === 0 ? C.electrodePulse : C.electrode;
-        ctx.fillRect(-s * 0.5, -s * 0.5, s, s);
+        // Spiky cross shape
+        const col1 = Math.floor(t * 4) % 2 === 0 ? C.electrode : C.electrodePulse;
+        const col2 = Math.floor(t * 4) % 2 === 0 ? C.electrodePulse : C.electrode;
+        ctx.fillStyle = col1;
+        ctx.fillRect(-s * 0.2, -s, s * 0.4, s * 2); // vertical bar
+        ctx.fillRect(-s, -s * 0.2, s * 2, s * 0.4); // horizontal bar
+        // Diagonal spikes
+        ctx.fillStyle = col2;
+        ctx.save();
+        ctx.rotate(Math.PI / 4);
+        ctx.fillRect(-s * 0.15, -s * 0.7, s * 0.3, s * 1.4);
+        ctx.fillRect(-s * 0.7, -s * 0.15, s * 1.4, s * 0.3);
+        ctx.restore();
+        // Center glow
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.6 + Math.sin(t * 10) * 0.4;
+        ctx.beginPath();
+        ctx.arc(0, 0, s * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
         break;
       }
       case 'spheroid': {
-        // Pulsating circle
-        const sp = 0.8 + Math.sin(e.special.pulseTimer * 3) * 0.4;
+        // SPHEROID: Floating drone — sphere with ring, pulsating
+        const col = flash ? '#ffffff' : C.spheroid;
+        const sp = 0.85 + Math.sin(e.special.pulseTimer * 3) * 0.3;
         ctx.scale(sp, sp);
+        // Outer ring
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(0, 0, s, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#ffffff';
-        ctx.globalAlpha = 0.3 + Math.sin(e.special.pulseTimer * 3) * 0.3;
+        ctx.ellipse(0, 0, s * 1.1, s * 0.4, game.time * 0.5, 0, Math.PI * 2);
+        ctx.stroke();
+        // Body sphere
+        ctx.fillStyle = col;
         ctx.beginPath();
         ctx.arc(0, 0, s * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        // Inner light
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.4 + Math.sin(e.special.pulseTimer * 3) * 0.3;
+        ctx.beginPath();
+        ctx.arc(-s * 0.15, -s * 0.15, s * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+        // Eye
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#001144';
+        ctx.beginPath();
+        ctx.arc(0, 0, s * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#4488ff';
+        ctx.beginPath();
+        ctx.arc(0, 0, s * 0.1, 0, Math.PI * 2);
         ctx.fill();
         break;
       }
       case 'enforcer': {
-        // Angular diamond
-        ctx.rotate(e.animTimer * 2);
+        // ENFORCER: Small attack drone — angular, with gun barrel
+        const col = flash ? '#ffffff' : C.enforcer;
+        ctx.rotate(e.animTimer * 1.5);
+        // Angular body
+        ctx.fillStyle = col;
         ctx.beginPath();
-        ctx.moveTo(0, -s); ctx.lineTo(s, 0);
-        ctx.lineTo(0, s); ctx.lineTo(-s, 0);
-        ctx.closePath(); ctx.fill();
+        ctx.moveTo(0, -s * 0.9);
+        ctx.lineTo(s * 0.7, -s * 0.1);
+        ctx.lineTo(s * 0.4, s * 0.7);
+        ctx.lineTo(-s * 0.4, s * 0.7);
+        ctx.lineTo(-s * 0.7, -s * 0.1);
+        ctx.closePath();
+        ctx.fill();
+        // Inner detail
+        ctx.fillStyle = '#005566';
+        ctx.beginPath();
+        ctx.moveTo(0, -s * 0.5);
+        ctx.lineTo(s * 0.3, s * 0.1);
+        ctx.lineTo(-s * 0.3, s * 0.1);
+        ctx.closePath();
+        ctx.fill();
+        // Gun port
+        ctx.fillStyle = '#ff6622';
+        ctx.beginPath();
+        ctx.arc(0, s * 0.4, s * 0.15, 0, Math.PI * 2);
+        ctx.fill();
         break;
       }
       case 'quark': {
-        // Spinning diamond with color cycling
+        // QUARK: Chaotic energy entity — spinning triangles, color-shifting
         const qcolors = ['#ff4400', '#ff8800', '#ffcc00'];
-        ctx.fillStyle = qcolors[Math.floor(game.time * 6) % 3];
+        const ci = Math.floor(game.time * 6) % 3;
         ctx.rotate(e.special.spinAngle);
+        // Outer triangle
+        ctx.fillStyle = flash ? '#ffffff' : qcolors[ci];
         ctx.beginPath();
-        ctx.moveTo(0, -s); ctx.lineTo(s, 0);
-        ctx.lineTo(0, s); ctx.lineTo(-s, 0);
+        ctx.moveTo(0, -s); ctx.lineTo(s * 0.87, s * 0.5); ctx.lineTo(-s * 0.87, s * 0.5);
         ctx.closePath(); ctx.fill();
+        // Inner inverted triangle
+        ctx.fillStyle = qcolors[(ci + 1) % 3];
+        ctx.beginPath();
+        ctx.moveTo(0, s * 0.5); ctx.lineTo(s * 0.43, -s * 0.25); ctx.lineTo(-s * 0.43, -s * 0.25);
+        ctx.closePath(); ctx.fill();
+        // Center energy core
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.6 + Math.sin(game.time * 8) * 0.4;
+        ctx.beginPath();
+        ctx.arc(0, 0, s * 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
         break;
       }
       case 'tank': {
-        // Rectangle with turret
-        ctx.fillRect(-s * 0.6, -s * 0.4, s * 1.2, s * 0.8);
+        // TANK: Heavy treaded robot — rectangular body, visible turret, treads
+        const col = flash ? '#ffffff' : C.tank;
+        // Treads
+        ctx.fillStyle = '#113311';
+        ctx.fillRect(-s * 0.7, -s * 0.35, s * 0.18, s * 0.7);
+        ctx.fillRect(s * 0.52, -s * 0.35, s * 0.18, s * 0.7);
+        // Tread detail lines
+        ctx.strokeStyle = '#224422';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 4; i++) {
+          const ty = -s * 0.3 + i * s * 0.18;
+          ctx.beginPath();
+          ctx.moveTo(-s * 0.7, ty); ctx.lineTo(-s * 0.52, ty);
+          ctx.moveTo(s * 0.52, ty); ctx.lineTo(s * 0.7, ty);
+          ctx.stroke();
+        }
+        // Body
+        ctx.fillStyle = col;
+        ctx.fillRect(-s * 0.5, -s * 0.3, s * 1.0, s * 0.6);
+        // Armor lines
         ctx.strokeStyle = '#44cc44';
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-s * 0.45, -s * 0.25, s * 0.9, s * 0.5);
+        // Turret base
+        ctx.fillStyle = '#336633';
+        ctx.beginPath();
+        ctx.arc(0, 0, s * 0.25, 0, Math.PI * 2);
+        ctx.fill();
+        // Turret barrel
+        ctx.strokeStyle = '#44ff44';
+        ctx.lineWidth = 4;
         ctx.beginPath();
         ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(e.special.turretAngle) * s, Math.sin(e.special.turretAngle) * s);
+        ctx.lineTo(Math.cos(e.special.turretAngle) * s * 0.8, Math.sin(e.special.turretAngle) * s * 0.8);
         ctx.stroke();
+        // Muzzle
+        ctx.fillStyle = '#88ff88';
+        ctx.beginPath();
+        ctx.arc(Math.cos(e.special.turretAngle) * s * 0.8, Math.sin(e.special.turretAngle) * s * 0.8, 3, 0, Math.PI * 2);
+        ctx.fill();
         break;
       }
       case 'brain': {
-        // Robotron-style brain — pink/purple brain shape with visible folds
+        // BRAIN: kept from previous overhaul (Robotron-style brain with folds)
         const wobble = Math.sin(e.special.shimmerTimer * 4) * 2;
         const t = e.special.shimmerTimer;
-        
-        // Brain body — rounded top, slightly flattened
-        ctx.fillStyle = e.special._flashTimer > 0 ? '#ffffff' : C.brain;
+        ctx.fillStyle = flash ? '#ffffff' : C.brain;
         ctx.beginPath();
-        // Upper dome (two hemispheres)
         ctx.ellipse(-s * 0.25, -s * 0.1 + wobble, s * 0.55, s * 0.7, -0.1, 0, Math.PI * 2);
         ctx.fill();
         ctx.beginPath();
         ctx.ellipse(s * 0.25, -s * 0.1 - wobble * 0.5, s * 0.55, s * 0.65, 0.1, 0, Math.PI * 2);
         ctx.fill();
-        // Lower stem/base
         ctx.fillStyle = '#aa33aa';
         ctx.beginPath();
         ctx.ellipse(0, s * 0.4, s * 0.35, s * 0.25, 0, 0, Math.PI * 2);
         ctx.fill();
-        // Center groove (divides the hemispheres)
         ctx.strokeStyle = '#662266';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(0, -s * 0.8 + wobble);
         ctx.quadraticCurveTo(wobble * 0.5, 0, 0, s * 0.3);
         ctx.stroke();
-        // Brain folds/wrinkles — the distinctive Robotron look
         ctx.strokeStyle = '#dd88dd';
         ctx.lineWidth = 1;
         ctx.globalAlpha = 0.6;
-        // Left hemisphere folds
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.6, -s * 0.2);
-        ctx.quadraticCurveTo(-s * 0.3, -s * 0.5, -s * 0.1, -s * 0.15);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(-s * 0.5, s * 0.1);
-        ctx.quadraticCurveTo(-s * 0.2, -s * 0.1, -s * 0.1, s * 0.15);
-        ctx.stroke();
-        // Right hemisphere folds
-        ctx.beginPath();
-        ctx.moveTo(s * 0.6, -s * 0.15);
-        ctx.quadraticCurveTo(s * 0.3, -s * 0.45, s * 0.1, -s * 0.1);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(s * 0.5, s * 0.15);
-        ctx.quadraticCurveTo(s * 0.2, -s * 0.05, s * 0.1, s * 0.2);
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-s*0.6,-s*0.2); ctx.quadraticCurveTo(-s*0.3,-s*0.5,-s*0.1,-s*0.15); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-s*0.5,s*0.1); ctx.quadraticCurveTo(-s*0.2,-s*0.1,-s*0.1,s*0.15); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(s*0.6,-s*0.15); ctx.quadraticCurveTo(s*0.3,-s*0.45,s*0.1,-s*0.1); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(s*0.5,s*0.15); ctx.quadraticCurveTo(s*0.2,-s*0.05,s*0.1,s*0.2); ctx.stroke();
         ctx.globalAlpha = 1;
-        // Shimmer highlight (sweeping white gleam)
         ctx.fillStyle = '#ffccff';
         ctx.globalAlpha = 0.2 + Math.sin(t * 6) * 0.2;
-        const shimX = Math.sin(t * 3) * s * 0.3;
         ctx.beginPath();
-        ctx.ellipse(shimX, -s * 0.2, s * 0.2, s * 0.15, 0, 0, Math.PI * 2);
+        ctx.ellipse(Math.sin(t*3)*s*0.3, -s*0.2, s*0.2, s*0.15, 0, 0, Math.PI*2);
         ctx.fill();
         ctx.globalAlpha = 1;
-        // Small evil eyes at the base
         ctx.fillStyle = '#ff0044';
-        ctx.fillRect(-s * 0.2, s * 0.25, s * 0.12, s * 0.08);
-        ctx.fillRect(s * 0.08, s * 0.25, s * 0.12, s * 0.08);
+        ctx.fillRect(-s*0.2, s*0.25, s*0.12, s*0.08);
+        ctx.fillRect(s*0.08, s*0.25, s*0.12, s*0.08);
         break;
       }
       case 'prog': {
-        // Glitchy human
-        const glitch = Math.sin(e.special.glitchTimer * 15) > 0.7 ? randF(-3, 3) : 0;
+        // PROG: Corrupted human — distorted humanoid with glitch effect
+        const glitch = Math.sin(e.special.glitchTimer * 15) > 0.7 ? randF(-4, 4) : 0;
         ctx.translate(glitch, 0);
-        ctx.fillStyle = Math.floor(e.special.glitchTimer * 8) % 2 === 0 ? C.prog : '#ff4444';
-        ctx.fillRect(-s * 0.4, -s * 0.6, s * 0.8, s * 1.2);
-        ctx.fillStyle = '#440000';
-        ctx.fillRect(-s * 0.3, -s * 0.8, s * 0.6, s * 0.3);
+        const pCol = Math.floor(e.special.glitchTimer * 8) % 2 === 0 ? C.prog : '#ff4444';
+        // Body (human-like but wrong)
+        ctx.fillStyle = pCol;
+        ctx.fillRect(-s * 0.35, -s * 0.5, s * 0.7, s * 0.8);
+        // Head (tilted/glitchy)
+        ctx.fillStyle = '#660000';
+        const headTilt = Math.sin(e.special.glitchTimer * 6) * 0.2;
+        ctx.save();
+        ctx.rotate(headTilt);
+        ctx.fillRect(-s * 0.25, -s * 0.85, s * 0.5, s * 0.38);
+        // Glowing red eyes
+        ctx.fillStyle = '#ff0000';
+        ctx.fillRect(-s * 0.15, -s * 0.75, s * 0.1, s * 0.06);
+        ctx.fillRect(s * 0.05, -s * 0.75, s * 0.1, s * 0.06);
+        ctx.restore();
+        // Legs (jerky)
+        ctx.fillStyle = '#441111';
+        const pLeg = Math.sin(e.special.glitchTimer * 12) * s * 0.15;
+        ctx.fillRect(-s * 0.3, s * 0.3, s * 0.22, s * 0.35 + pLeg);
+        ctx.fillRect(s * 0.08, s * 0.3, s * 0.22, s * 0.35 - pLeg);
+        // Glitch scanlines
+        if (Math.random() < 0.3) {
+          ctx.fillStyle = '#ff000044';
+          ctx.fillRect(-s * 0.5, randF(-s, s) * 0.8, s, 2);
+        }
         break;
       }
     }
@@ -1645,9 +1792,6 @@ function spawnHumans(count) {
       animFrame: 0,
     });
   }
-  // Track wave human count
-  game.waveHumansStart = game.humans.length;
-  game.waveHumansLost = 0;
 }
 
 function updateHumans(dt) {
@@ -1775,6 +1919,7 @@ function killHuman(h, index) {
   h.alive = false;
   game.humans.splice(index, 1);
   game.waveHumansLost++;
+  game.cycleSurvivorCount = Math.max(0, game.cycleSurvivorCount - 1);
   
   // Big death effect — this should feel BAD
   emitParticles(h.x, h.y, 15, h.color, 20, 120, 0.7, 4);
@@ -1801,6 +1946,7 @@ function convertHumanToProg(h) {
   h.alive = false;
   game.humans.splice(idx, 1);
   game.waveHumansLost++;
+  game.cycleSurvivorCount = Math.max(0, game.cycleSurvivorCount - 1);
   
   // Spawn a Prog at the human's location
   const prog = createEnemy('prog', h.x, h.y);
@@ -2920,19 +3066,27 @@ function startNextWave() {
   if (w >= 4) { for (let i = 0; i < Math.min(w - 3, 2); i++) spawnEnemyAtEdge('quark'); }
   
   // ---- HUMAN CYCLE SYSTEM ----
-  // Fresh batch of humans every 5 waves. Survivors carry over between waves within the cycle.
-  // Any humans killed in wave 1 are NOT replaced in waves 2-5.
-  // This creates escalating tension within each 5-wave cycle.
+  // Fixed pool of survivors across 5-wave cycles.
+  // Wave 1/6/11/16: fresh batch spawns.
+  // Waves 2-5 within a cycle: ONLY the survivors from the previous wave return.
+  // Rescued humans come back (they survived!). Killed humans do NOT.
+  // This means the pool shrinks only when enemies kill humans.
+  
   if (isNewCycle) {
-    // Clear any leftover humans from previous cycle
+    // Fresh batch
     game.humans = [];
-    // Fresh batch scales with difficulty
-    const cycleNum = Math.floor((w - 1) / 5) + 1; // 1st cycle, 2nd cycle, etc.
-    const humanCount = Math.max(8, 20 + cycleNum * 3);
-    spawnHumans(humanCount);
+    game.cycleSurvivorCount = Math.max(8, 20 + Math.floor((w - 1) / 5) * 3);
+    spawnHumans(game.cycleSurvivorCount);
+    game.cycleSurvivorCount = game.humans.length; // actual spawned (may be less due to position conflicts)
+  } else {
+    // Carry-over: the survivors from last wave = cycleSurvivorCount - total killed across this cycle
+    // Re-spawn the surviving count at random positions
+    const survivorCount = game.cycleSurvivorCount; // this was decremented by killHuman
+    game.humans = [];
+    if (survivorCount > 0) {
+      spawnHumans(survivorCount);
+    }
   }
-  // If not a new cycle, humans carry over from the previous wave — no new spawns!
-  // The remaining humans from the previous wave are still on the map.
   
   // Track for this wave
   game.waveHumansStart = game.humans.length;
@@ -3624,6 +3778,7 @@ function resetGame() {
   game.waveHumansStart = 0;
   game.waveHumansLost = 0;
   game.gameOverReason = '';
+  game.cycleSurvivorCount = 0;
   game.runTime = 0;
   game.nextHpRestore = 25000;
   game.powerScore = 0;
