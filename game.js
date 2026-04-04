@@ -597,6 +597,17 @@ const SFX = {
     playTone(100, 0.04, 'sawtooth', 0.06, 50);
     playNoise(0.03, 0.04);
   },
+  playerDash() {
+    // Whoosh + energy burst — feels fast and powerful
+    playTone(300, 0.08, 'sawtooth', 0.2, 1200);
+    playTone(600, 0.06, 'sine', 0.1, 2000, 0.02);
+    playNoise(0.06, 0.1, 0.01);
+  },
+  dashReady() {
+    // Subtle chime when dash comes off cooldown
+    playTone(1200, 0.03, 'sine', 0.06);
+    playTone(1600, 0.03, 'sine', 0.04, null, 0.03);
+  },
 };
 
 // ============================================================================
@@ -751,6 +762,11 @@ const game = {
     damageMulti: 1.0,
     speedMulti: 1.0,
     cooldownMulti: 1.0,
+    dashCooldown: 0, // current cooldown remaining
+    dashCooldownMax: 3.0, // base 3 seconds, reduced by cooldownMulti
+    isDashing: false,
+    dashTimer: 0,
+    dashDirX: 0, dashDirY: 0,
     pickupRadiusMulti: 1.0,
     projSpeedMulti: 1.0,
     durationMulti: 1.0,
@@ -850,29 +866,88 @@ function updateCamera(dt) {
 // 11. PLAYER
 // ============================================================================
 
+const DASH_DISTANCE_RATIO = 0.25; // 25% of screen
+const DASH_DURATION = 0.12; // seconds (fast snap)
+const DASH_BASE_COOLDOWN = 3.0;
+
 function updatePlayer(dt) {
   const p = game.player;
   if (!p.alive) return;
   
-  // Movement
-  const spd = p.speed * p.speedMulti;
-  p.x += Input.moveX * spd * dt;
-  p.y += Input.moveY * spd * dt;
+  // ---- DASH ----
+  p.dashCooldown = Math.max(0, p.dashCooldown - dt);
   
-  // Clamp to world
-  p.x = clamp(p.x, PLAYER_SIZE, WORLD_W - PLAYER_SIZE);
-  p.y = clamp(p.y, PLAYER_SIZE, WORLD_H - PLAYER_SIZE);
+  // Notify when dash comes off cooldown
+  if (p.dashCooldown <= 0 && p._dashWasCooling) {
+    p._dashWasCooling = false;
+    SFX.dashReady();
+  }
+  
+  if (p.isDashing) {
+    // During dash: rapid movement in dash direction, invincible
+    p.dashTimer -= dt;
+    const dashSpeed = (game.width * DASH_DISTANCE_RATIO) / DASH_DURATION;
+    p.x += p.dashDirX * dashSpeed * dt;
+    p.y += p.dashDirY * dashSpeed * dt;
+    p.x = clamp(p.x, PLAYER_SIZE, WORLD_W - PLAYER_SIZE);
+    p.y = clamp(p.y, PLAYER_SIZE, WORLD_H - PLAYER_SIZE);
+    
+    // Dash trail particles
+    if (Math.random() < 0.6) {
+      emitParticles(p.x, p.y, 1, C.player, 8, 30, 0.2, 3);
+    }
+    
+    if (p.dashTimer <= 0) {
+      p.isDashing = false;
+      p.iframes = 0.15; // brief invincibility at dash end
+    }
+    // Skip normal movement during dash
+  } else {
+    // ---- NORMAL MOVEMENT ----
+    const spd = p.speed * p.speedMulti;
+    p.x += Input.moveX * spd * dt;
+    p.y += Input.moveY * spd * dt;
+    
+    p.x = clamp(p.x, PLAYER_SIZE, WORLD_W - PLAYER_SIZE);
+    p.y = clamp(p.y, PLAYER_SIZE, WORLD_H - PLAYER_SIZE);
+    
+    // Trigger dash (A button = 0 on controller, Shift on keyboard)
+    if ((Input.gpJust(0) || Input.wasPressed('ShiftLeft') || Input.wasPressed('ShiftRight')) && p.dashCooldown <= 0) {
+      // Dash in movement direction, or facing direction if standing still
+      let dx = Input.moveX, dy = Input.moveY;
+      if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+        dx = Math.cos(p.facing);
+        dy = Math.sin(p.facing);
+      }
+      const mag = Math.hypot(dx, dy);
+      if (mag > 0) {
+        p.dashDirX = dx / mag;
+        p.dashDirY = dy / mag;
+        p.isDashing = true;
+        p.dashTimer = DASH_DURATION;
+        p.dashCooldown = DASH_BASE_COOLDOWN * Math.max(0.3, p.cooldownMulti);
+        p._dashWasCooling = true;
+        p.iframes = DASH_DURATION + 0.05; // invincible during dash
+        SFX.playerDash();
+        // Burst of particles at start
+        emitParticles(p.x, p.y, 8, C.player, 15, 120, 0.3, 3);
+        emitParticles(p.x, p.y, 4, '#ffffff', 10, 80, 0.2, 2);
+      }
+    }
+  }
   
   // Facing
-  if (Math.abs(Input.aimX) > 0.01 || Math.abs(Input.aimY) > 0.01) {
-    p.facing = Math.atan2(Input.aimY, Input.aimX);
-  } else if (Math.abs(Input.moveX) > 0.01 || Math.abs(Input.moveY) > 0.01) {
-    p.facing = Math.atan2(Input.moveY, Input.moveX);
+  if (!p.isDashing) {
+    if (Math.abs(Input.aimX) > 0.01 || Math.abs(Input.aimY) > 0.01) {
+      p.facing = Math.atan2(Input.aimY, Input.aimX);
+    } else if (Math.abs(Input.moveX) > 0.01 || Math.abs(Input.moveY) > 0.01) {
+      p.facing = Math.atan2(Input.moveY, Input.moveX);
+    }
   }
   
   // Animation
   p.animTimer += dt;
-  if (Math.abs(Input.moveX) > 0.01 || Math.abs(Input.moveY) > 0.01) {
+  if (Math.abs(Input.moveX) > 0.01 || Math.abs(Input.moveY) > 0.01 || p.isDashing) {
     if (p.animTimer > 0.15) { p.animFrame = (p.animFrame + 1) % 4; p.animTimer = 0; }
   } else {
     p.animFrame = 0;
@@ -886,9 +961,9 @@ function updatePlayer(dt) {
     p.hp = Math.min(p.hp + p.regenPerSec * dt, p.maxHp);
   }
   
-  // Fire laser
+  // Fire laser (not during dash)
   p.fireCooldown -= dt;
-  if ((Math.abs(Input.aimX) > 0.01 || Math.abs(Input.aimY) > 0.01) && p.fireCooldown <= 0) {
+  if (!p.isDashing && (Math.abs(Input.aimX) > 0.01 || Math.abs(Input.aimY) > 0.01) && p.fireCooldown <= 0) {
     fireLaser(p.x, p.y, Input.aimX, Input.aimY);
     p.fireCooldown = LASER_COOLDOWN * p.cooldownMulti;
   }
@@ -3645,6 +3720,23 @@ function drawHUD(ctx) {
     ctx.globalAlpha = 1;
   }
   
+  // Dash cooldown indicator — near HP bar
+  ctx.textAlign = 'left';
+  ctx.font = "7px 'Press Start 2P', monospace";
+  if (p.dashCooldown <= 0) {
+    ctx.fillStyle = '#00e5ff';
+    ctx.fillText(`DASH READY [${Input.gamepad ? 'A' : 'SHIFT'}]`, 16, hpY - 18);
+  } else {
+    ctx.fillStyle = '#555555';
+    const cdPct = Math.ceil((p.dashCooldown / (DASH_BASE_COOLDOWN * Math.max(0.3, p.cooldownMulti))) * 100);
+    ctx.fillText(`DASH ${Math.ceil(p.dashCooldown * 10) / 10}s`, 16, hpY - 18);
+    // Cooldown bar
+    ctx.fillStyle = '#333333';
+    ctx.fillRect(120, hpY - 22, 60, 6);
+    ctx.fillStyle = '#00e5ff';
+    ctx.fillRect(120, hpY - 22, 60 * (1 - p.dashCooldown / (DASH_BASE_COOLDOWN * Math.max(0.3, p.cooldownMulti))), 6);
+  }
+  
   // Active weapons — bottom right
   ctx.textAlign = 'right';
   ctx.font = "7px 'Press Start 2P', monospace";
@@ -4471,6 +4563,7 @@ function resetGame() {
   p.xp = 0; p.level = 1; p.xpToNext = 5;
   p.score = 0; p.rescueCount = 0; p.totalRescues = 0; p.totalKills = 0;
   p.fireCooldown = 0; p.facing = 0; p.animFrame = 0; p.animTimer = 0;
+  p.dashCooldown = 0; p.isDashing = false; p.dashTimer = 0; p._dashWasCooling = false;
   p.weapons = []; p.passives = [];
   recalcPassiveStats();
   
