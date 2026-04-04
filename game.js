@@ -294,6 +294,9 @@ let masterGain = null;
 let sfxGain = null;
 let musicGain = null;
 
+// Loaded WAV sample buffers
+const sampleBuffers = {};
+
 function initAudio() {
   if (audioCtx) return;
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -306,6 +309,29 @@ function initAudio() {
   musicGain = audioCtx.createGain();
   musicGain.gain.value = 0.3;
   musicGain.connect(masterGain);
+  
+  // Load WAV samples
+  loadSample('rescue', 'rescue.wav');
+  loadSample('smartbomb_award', 'smartbomb-award.wav');
+}
+
+function loadSample(name, url) {
+  fetch(url)
+    .then(r => r.arrayBuffer())
+    .then(buf => audioCtx.decodeAudioData(buf))
+    .then(decoded => { sampleBuffers[name] = decoded; })
+    .catch(() => { /* sample load failed — fall back to procedural */ });
+}
+
+function playSample(name, volume) {
+  if (!audioCtx || !sampleBuffers[name]) return false;
+  const src = audioCtx.createBufferSource();
+  src.buffer = sampleBuffers[name];
+  const gain = audioCtx.createGain();
+  gain.gain.value = volume || 0.8;
+  src.connect(gain).connect(sfxGain);
+  src.start();
+  return true;
 }
 
 function resumeAudio() {
@@ -829,6 +855,7 @@ const game = {
   attractReturnTimer: 30, // gameover returns to attract after this
   attractScoreTab: 0, // 0=daily, 1=weekly, 2=alltime
   attractScoreTabTimer: 0,
+  titleMenuSelection: 0, // 0=start, 1=controls
   
   // Power score (adaptive difficulty)
   powerScore: 0,
@@ -911,8 +938,8 @@ function updatePlayer(dt) {
     p.x = clamp(p.x, PLAYER_SIZE, WORLD_W - PLAYER_SIZE);
     p.y = clamp(p.y, PLAYER_SIZE, WORLD_H - PLAYER_SIZE);
     
-    // Trigger dash (A button = 0 on controller, Shift on keyboard)
-    if ((Input.gpJust(0) || Input.wasPressed('ShiftLeft') || Input.wasPressed('ShiftRight')) && p.dashCooldown <= 0) {
+    // Trigger dash (remappable)
+    if ((Input.gpJust(binds.dash.gp) || Input.wasPressed(binds.dash.key)) && p.dashCooldown <= 0) {
       // Dash in movement direction, or facing direction if standing still
       let dx = Input.moveX, dy = Input.moveY;
       if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
@@ -2067,7 +2094,8 @@ function rescueHuman(h, index) {
   
   emitDirectionalParticles(h.x, h.y, 15, '#44ff44', 0, -1, 40, 120, 0.8, 3);
   spawnFloatingText(h.x, h.y - 15, `${points}`, '#44ff44', 14);
-  SFX.humanRescue(rescueNum);
+  // Play the Joust WAV sample for rescue, fall back to procedural if not loaded
+  if (!playSample('rescue', 0.9)) SFX.humanRescue(rescueNum);
 }
 
 function killHuman(h, index) {
@@ -3439,7 +3467,10 @@ function startNextWave() {
   // Award smart bombs every 5 waves
   if (w % 5 === 1 || w === 1) {
     awardSmartBombs();
-    if (w > 1) spawnFloatingText(game.player.x, game.player.y - 80, `+2 SMART BOMBS!`, '#ffcc00', 12);
+    if (w > 1) {
+      spawnFloatingText(game.player.x, game.player.y - 80, `+2 SMART BOMBS!`, '#ffcc00', 12);
+      if (!playSample('smartbomb_award', 1.0)) SFX.levelUp();
+    }
   }
   
   // Show cycle info
@@ -4043,18 +4074,28 @@ function drawTitleScreen(ctx) {
   }
   ctx.globalAlpha = 1;
   
-  // PRESS START — pulsing
-  const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.7;
-  ctx.globalAlpha = pressAlpha;
-  ctx.fillStyle = C.textWhite;
-  ctx.font = "16px 'Press Start 2P', monospace";
-  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.55);
+  // Title menu selection
+  const menuItems = ['START GAME', 'VIEW & MAP CONTROLS'];
+  const menuY = h * 0.52;
+  for (let i = 0; i < menuItems.length; i++) {
+    const selected = i === game.titleMenuSelection;
+    const pulse = selected ? 0.8 + Math.sin(t * 4) * 0.2 : 0.4;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = selected ? C.textCyan : '#666666';
+    ctx.font = `${selected ? 'bold ' : ''}12px 'Press Start 2P', monospace`;
+    ctx.fillText((selected ? '> ' : '  ') + menuItems[i] + (selected ? ' <' : ''), w / 2, menuY + i * 30);
+  }
   ctx.globalAlpha = 1;
+  
+  // Controls hint
+  ctx.fillStyle = '#444444';
+  ctx.font = "7px 'Press Start 2P', monospace";
+  ctx.fillText(Input.gamepad ? 'D-PAD/STICK: SELECT    A: CONFIRM' : 'UP/DOWN: SELECT    ENTER: CONFIRM', w / 2, menuY + menuItems.length * 30 + 20);
   
   // Subtitle
   ctx.fillStyle = '#555555';
   ctx.font = "8px 'Press Start 2P', monospace";
-  ctx.fillText('INSERT COIN... JUST KIDDING, IT\'S FREE', w / 2, h * 0.62);
+  ctx.fillText('INSERT COIN... JUST KIDDING, IT\'S FREE', w / 2, h * 0.72);
   
   // Credits
   ctx.fillStyle = '#333333';
@@ -4062,23 +4103,34 @@ function drawTitleScreen(ctx) {
   ctx.fillText('INSPIRED BY ROBOTRON: 2084 & VAMPIRE SURVIVORS', w / 2, h * 0.90);
 }
 
-// Demo scene entities (pre-populated once, reused)
+// Demo scene state
 let demoInited = false;
 let demoEnemies = [];
 let demoHumans = [];
 let demoPlayer = { x: 0, y: 0, facing: 0, animFrame: 0, animTimer: 0, alive: true, iframes: 0 };
+let demoBullets = []; // { x, y, vx, vy, prevX, prevY, life }
+let demoScore = 0;
+let demoFireTimer = 0;
+let demoRescueTimer = 0; // time until player moves to rescue a human
+let demoTargetHuman = null;
 
 function initDemoScene() {
   demoEnemies = [];
   demoHumans = [];
+  demoBullets = [];
+  demoScore = 0;
+  demoFireTimer = 0;
+  demoRescueTimer = 3; // first rescue attempt at 3 seconds
+  demoTargetHuman = null;
   const cx = WORLD_W / 2, cy = WORLD_H / 2;
-  // Spawn a variety of enemies around the center
-  const types = ['grunt','grunt','grunt','grunt','grunt','grunt','hulk','spheroid','enforcer','quark','tank','brain','prog','grunt','grunt','enforcer','tank'];
+  
+  // Spawn enemies in a ring around center
+  const types = ['grunt','grunt','grunt','grunt','grunt','grunt','grunt','grunt','hulk','spheroid','enforcer','enforcer','quark','tank','tank','brain','prog','grunt','grunt','grunt'];
   for (let i = 0; i < types.length; i++) {
     const a = (i / types.length) * Math.PI * 2;
-    const r = 200 + randF(50, 350);
+    const r = 250 + randF(80, 400);
     const e = createEnemy(types[i], cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-    e.spawnTimer = 0; // already materialized
+    e.spawnTimer = 0;
     e.animTimer = randF(0, 5);
     if (e.special.shimmerTimer !== undefined) e.special.shimmerTimer = randF(0, 5);
     if (e.special.pulseTimer !== undefined) e.special.pulseTimer = randF(0, 5);
@@ -4088,18 +4140,19 @@ function initDemoScene() {
     if (e.special.glitchTimer !== undefined) e.special.glitchTimer = randF(0, 5);
     demoEnemies.push(e);
   }
-  // Spawn humans
-  const htypes = ['mommy','daddy','mikey','mommy','daddy'];
+  
+  // Spawn humans scattered around
+  const htypes = ['mommy','daddy','mikey','mommy','daddy','mikey'];
   const hcolors = { mommy: C.mommy, daddy: C.daddy, mikey: C.mikey };
   const hsizes = { mommy: 24, daddy: 28, mikey: 20 };
   for (let i = 0; i < htypes.length; i++) {
-    const a = (i / htypes.length) * Math.PI * 2 + 0.5;
-    const r = 150 + randF(30, 200);
+    const a = (i / htypes.length) * Math.PI * 2 + 0.3;
+    const r = 180 + randF(50, 280);
     demoHumans.push({
       type: htypes[i], x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r,
       vx: 0, vy: 0, color: hcolors[htypes[i]], size: hsizes[htypes[i]],
       speed: 55, wanderTimer: 0, alive: true,
-      moveAngle: randF(0, Math.PI * 2), panicTimer: randF(0, 0.5),
+      moveAngle: randF(0, Math.PI * 2), panicTimer: 0,
       panicDirX: 0, panicDirY: 0, animTimer: randF(0, 3), animFrame: randI(0, 3),
     });
   }
@@ -4115,61 +4168,239 @@ function drawAttractDemo(ctx) {
   
   if (!demoInited) initDemoScene();
   
-  // Animate demo entities
   const dt = 1/60;
   const cx = WORLD_W / 2;
   const cy = WORLD_H / 2;
   
-  // Move demo player in a circle pattern
-  demoPlayer.x = cx + Math.sin(t * 1.0) * 250;
-  demoPlayer.y = cy + Math.cos(t * 0.7) * 180;
-  demoPlayer.facing = Math.atan2(Math.cos(t * 0.7) * -0.7, Math.cos(t * 1.0) * 1.0);
-  demoPlayer.animTimer += dt;
-  if (demoPlayer.animTimer > 0.15) { demoPlayer.animFrame = (demoPlayer.animFrame + 1) % 4; demoPlayer.animTimer = 0; }
+  // ---- AI PLAYER BEHAVIOR ----
+  // Phase 1: Circle and shoot enemies. Phase 2: Move toward a human to rescue it.
+  demoRescueTimer -= dt;
   
-  // Animate demo enemies (move toward player slowly, animate)
+  let moveTargetX, moveTargetY;
+  
+  if (demoRescueTimer <= 0 && demoHumans.length > 0) {
+    // Pick closest human and move toward it
+    if (!demoTargetHuman || !demoTargetHuman.alive) {
+      let nearest = null, nearDist = Infinity;
+      for (const h2 of demoHumans) {
+        if (!h2.alive) continue;
+        const d2 = dist(demoPlayer.x, demoPlayer.y, h2.x, h2.y);
+        if (d2 < nearDist) { nearDist = d2; nearest = h2; }
+      }
+      demoTargetHuman = nearest;
+    }
+    if (demoTargetHuman) {
+      moveTargetX = demoTargetHuman.x;
+      moveTargetY = demoTargetHuman.y;
+      // Check rescue (contact)
+      if (dist(demoPlayer.x, demoPlayer.y, demoTargetHuman.x, demoTargetHuman.y) < 30) {
+        // Rescue! Particles + score
+        emitDirectionalParticles(demoTargetHuman.x, demoTargetHuman.y, 12, '#44ff44', 0, -1, 30, 100, 0.6, 3);
+        spawnFloatingText(demoTargetHuman.x, demoTargetHuman.y - 20, '1000', '#44ff44', 14);
+        demoTargetHuman.alive = false;
+        demoScore += 1000;
+        demoRescueTimer = randF(4, 8); // wait before next rescue
+        demoTargetHuman = null;
+      }
+    } else {
+      demoRescueTimer = 2;
+    }
+  } else {
+    // Patrol in a circle while shooting
+    moveTargetX = cx + Math.sin(t * 0.8) * 280;
+    moveTargetY = cy + Math.cos(t * 0.6) * 200;
+  }
+  
+  // Move player toward target
+  const pdx = moveTargetX - demoPlayer.x;
+  const pdy = moveTargetY - demoPlayer.y;
+  const pDist = Math.hypot(pdx, pdy);
+  if (pDist > 5) {
+    const spd = 250 * dt;
+    demoPlayer.x += (pdx / pDist) * spd;
+    demoPlayer.y += (pdy / pDist) * spd;
+  }
+  demoPlayer.animTimer += dt;
+  if (demoPlayer.animTimer > 0.12) { demoPlayer.animFrame = (demoPlayer.animFrame + 1) % 4; demoPlayer.animTimer = 0; }
+  
+  // ---- AI PLAYER AUTO-FIRE toward nearest enemy ----
+  demoFireTimer -= dt;
+  if (demoFireTimer <= 0) {
+    // Find nearest enemy
+    let nearE = null, nearD = Infinity;
+    for (const e of demoEnemies) {
+      if (!e.active || !e.alive) continue;
+      const d2 = dist(demoPlayer.x, demoPlayer.y, e.x, e.y);
+      if (d2 < nearD) { nearD = d2; nearE = e; }
+    }
+    if (nearE && nearD < 500) {
+      const a = angle(demoPlayer.x, demoPlayer.y, nearE.x, nearE.y);
+      demoPlayer.facing = a;
+      demoBullets.push({
+        x: demoPlayer.x, y: demoPlayer.y,
+        prevX: demoPlayer.x, prevY: demoPlayer.y,
+        vx: Math.cos(a) * LASER_SPEED, vy: Math.sin(a) * LASER_SPEED,
+        life: 1.5,
+      });
+      demoFireTimer = LASER_COOLDOWN;
+    } else {
+      demoPlayer.facing = Math.atan2(pdy, pdx);
+      demoFireTimer = 0.1;
+    }
+  }
+  
+  // ---- UPDATE DEMO BULLETS ----
+  for (let i = demoBullets.length - 1; i >= 0; i--) {
+    const b = demoBullets[i];
+    b.prevX = b.x; b.prevY = b.y;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+    if (b.life <= 0) { demoBullets.splice(i, 1); continue; }
+    
+    // Hit enemies
+    for (const e of demoEnemies) {
+      if (!e.active || !e.alive || e.spawnTimer > 0) continue;
+      if (dist(b.x, b.y, e.x, e.y) < e.size + 4) {
+        if (!e.special.invincible) {
+          e.hp--;
+          if (e.hp <= 0) {
+            e.alive = false; e.active = false;
+            emitParticles(e.x, e.y, 10, e.color, 15, 150, 0.5, 3);
+            demoScore += e.points;
+            spawnFloatingText(e.x, e.y, `${e.points}`, C.textWhite, 10);
+            // Respawn a new grunt to keep the scene populated
+            const na = randF(0, Math.PI * 2);
+            const nr = 350 + randF(50, 150);
+            const ne = createEnemy('grunt', cx + Math.cos(na) * nr, cy + Math.sin(na) * nr);
+            ne.spawnTimer = 0;
+            ne.animTimer = randF(0, 3);
+            demoEnemies.push(ne);
+          } else {
+            e.special._flashTimer = 0.05;
+          }
+        } else {
+          // Hulk knockback
+          const dx2 = e.x - b.x, dy2 = e.y - b.y;
+          const d2 = Math.hypot(dx2, dy2);
+          if (d2 > 0) { e.x += (dx2/d2) * 6; e.y += (dy2/d2) * 6; }
+          emitParticles(e.x, e.y, 2, '#ffffff', 8, 60, 0.15, 2);
+        }
+        demoBullets.splice(i, 1);
+        break;
+      }
+    }
+  }
+  
+  // ---- ANIMATE DEMO ENEMIES (real AI patterns) ----
   for (const e of demoEnemies) {
+    if (!e.active || !e.alive) continue;
     e.animTimer += dt;
     const dx = demoPlayer.x - e.x, dy = demoPlayer.y - e.y;
     const d = Math.hypot(dx, dy);
-    if (d > 100) {
-      e.x += (dx / d) * e.speed * 0.3 * dt;
-      e.y += (dy / d) * e.speed * 0.3 * dt;
+    
+    // Grunts chase aggressively
+    if (e.type === 'grunt') {
+      if (d > 0) {
+        const weave = Math.sin(e.animTimer * 3 + e.x * 0.01) * 12;
+        const perpX = -dy / d, perpY = dx / d;
+        e.x += ((dx / d) * e.speed + perpX * weave) * dt;
+        e.y += ((dy / d) * e.speed + perpY * weave) * dt;
+      }
+    } else if (e.type === 'hulk') {
+      // Slow lumber
+      if (d > 0) {
+        e.x += (dx / d) * e.speed * 0.5 * dt;
+        e.y += (dy / d) * e.speed * 0.5 * dt;
+      }
+    } else {
+      // Other types drift toward player slowly
+      if (d > 80) {
+        e.x += (dx / d) * e.speed * 0.4 * dt;
+        e.y += (dy / d) * e.speed * 0.4 * dt;
+      }
     }
+    
     if (e.special.shimmerTimer !== undefined) e.special.shimmerTimer += dt;
     if (e.special.pulseTimer !== undefined) e.special.pulseTimer += dt;
     if (e.special.colorTimer !== undefined) e.special.colorTimer += dt;
     if (e.special.spinAngle !== undefined) e.special.spinAngle += dt * 3;
     if (e.special.glitchTimer !== undefined) e.special.glitchTimer += dt;
-    // Keep in bounds around center
-    e.x = clamp(e.x, cx - 500, cx + 500);
-    e.y = clamp(e.y, cy - 400, cy + 400);
+    if (e.special.turretAngle !== undefined) {
+      e.special.turretAngle = Math.atan2(dy, dx);
+    }
+    e.x = clamp(e.x, cx - 550, cx + 550);
+    e.y = clamp(e.y, cy - 450, cy + 450);
   }
+  // Clean dead enemies
+  demoEnemies = demoEnemies.filter(e => e.active && e.alive);
   
-  // Animate demo humans (wander)
+  // ---- ANIMATE DEMO HUMANS (panic near enemies) ----
   for (const h2 of demoHumans) {
+    if (!h2.alive) continue;
     h2.animTimer += dt;
-    h2.wanderTimer -= dt;
-    if (h2.wanderTimer <= 0) {
-      h2.moveAngle = randF(0, Math.PI * 2);
-      h2.vx = Math.cos(h2.moveAngle) * h2.speed;
-      h2.vy = Math.sin(h2.moveAngle) * h2.speed;
-      h2.wanderTimer = randF(0.5, 1.5);
+    // Panic check
+    let nearEnDist = Infinity;
+    for (const e of demoEnemies) {
+      if (!e.active) continue;
+      const ed = dist(h2.x, h2.y, e.x, e.y);
+      if (ed < nearEnDist) nearEnDist = ed;
+    }
+    if (nearEnDist < 120) {
+      h2.panicTimer = 0.5;
+      // Flee from nearest enemy
+      for (const e of demoEnemies) {
+        if (dist(h2.x, h2.y, e.x, e.y) === nearEnDist) {
+          const fx = h2.x - e.x, fy = h2.y - e.y;
+          const fd = Math.hypot(fx, fy);
+          if (fd > 0) { h2.panicDirX = fx/fd; h2.panicDirY = fy/fd; }
+          break;
+        }
+      }
+    }
+    h2.panicTimer -= dt;
+    if (h2.panicTimer > 0) {
+      h2.vx = h2.panicDirX * h2.speed * 1.8;
+      h2.vy = h2.panicDirY * h2.speed * 1.8;
+    } else {
+      h2.wanderTimer -= dt;
+      if (h2.wanderTimer <= 0) {
+        h2.moveAngle = randF(0, Math.PI * 2);
+        h2.vx = Math.cos(h2.moveAngle) * h2.speed;
+        h2.vy = Math.sin(h2.moveAngle) * h2.speed;
+        h2.wanderTimer = randF(0.5, 1.5);
+      }
     }
     h2.x += h2.vx * dt; h2.y += h2.vy * dt;
-    h2.x = clamp(h2.x, cx - 400, cx + 400);
-    h2.y = clamp(h2.y, cy - 300, cy + 300);
+    h2.x = clamp(h2.x, cx - 450, cx + 450);
+    h2.y = clamp(h2.y, cy - 350, cy + 350);
     if (h2.animTimer > 0.12) { h2.animFrame = (h2.animFrame + 1) % 4; h2.animTimer = 0; }
   }
+  demoHumans = demoHumans.filter(h2 => h2.alive);
+  // Respawn humans if running low
+  if (demoHumans.length < 3) {
+    const htypes2 = ['mommy','daddy','mikey'];
+    const hcolors2 = { mommy: C.mommy, daddy: C.daddy, mikey: C.mikey };
+    const hsizes2 = { mommy: 24, daddy: 28, mikey: 20 };
+    const ht = htypes2[randI(0,2)];
+    const ha = randF(0, Math.PI * 2);
+    demoHumans.push({
+      type: ht, x: cx + Math.cos(ha) * 350, y: cy + Math.sin(ha) * 280,
+      vx: 0, vy: 0, color: hcolors2[ht], size: hsizes2[ht],
+      speed: 55, wanderTimer: 0, alive: true,
+      moveAngle: randF(0, Math.PI * 2), panicTimer: 0,
+      panicDirX: 0, panicDirY: 0, animTimer: 0, animFrame: 0,
+    });
+  }
   
-  // Set up camera for the demo scene
+  // ---- RENDER via real game renderer ----
   const saveCamX = game.camX, saveCamY = game.camY;
   const saveZoom = game.camZoom;
   const savePlayer = { ...game.player };
   const saveEnemies = game.enemies;
   const saveHumans = game.humans;
+  const saveBullets = [];
   
-  // Temporarily swap in demo entities
   game.camX = cx - w / 2;
   game.camY = cy - h / 2;
   game.camZoom = 1.0;
@@ -4182,8 +4413,30 @@ function drawAttractDemo(ctx) {
   game.enemies = demoEnemies;
   game.humans = demoHumans;
   
-  // Draw using the real game renderer
   drawWorld(ctx);
+  
+  // Draw demo bullets on top (in world space)
+  ctx.save();
+  ctx.scale(game.camZoom, game.camZoom);
+  ctx.translate(-game.camX, -game.camY);
+  for (const b of demoBullets) {
+    ctx.strokeStyle = C.laserGlow;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = LASER_WIDTH + 1;
+    ctx.beginPath();
+    ctx.moveTo(b.prevX, b.prevY);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffffff';
+    const ba = Math.atan2(b.vy, b.vx);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ba);
+    ctx.fillRect(-LASER_LENGTH, -LASER_WIDTH/2, LASER_LENGTH * 2, LASER_WIDTH);
+    ctx.restore();
+  }
+  ctx.restore();
   
   // Restore real state
   game.camX = saveCamX; game.camY = saveCamY;
@@ -4192,26 +4445,25 @@ function drawAttractDemo(ctx) {
   game.enemies = saveEnemies;
   game.humans = saveHumans;
   
-  // Overlay: demo label + fake HUD elements
+  // ---- OVERLAY HUD ----
   ctx.fillStyle = '#ffffff';
   ctx.globalAlpha = 0.35;
   ctx.font = "10px 'Press Start 2P', monospace";
   ctx.textAlign = 'left';
-  ctx.fillText('DEMO PLAY', 16, 24);
+  ctx.fillText('GAMEPLAY DEMO', 16, 24);
   ctx.globalAlpha = 1;
   
-  // Fake score/wave HUD
   ctx.font = "bold 12px 'Press Start 2P', monospace";
   ctx.fillStyle = C.textWhite;
   ctx.textAlign = 'left';
-  ctx.fillText('SCORE ' + Math.floor(t * 1250).toLocaleString(), 16, h - 20);
+  ctx.fillText('SCORE ' + demoScore.toLocaleString(), 16, h - 20);
   ctx.textAlign = 'right';
   ctx.fillText('WAVE 7', w - 16, 24);
   ctx.fillStyle = '#44ff44';
   ctx.font = "9px 'Press Start 2P', monospace";
-  ctx.fillText('SURVIVORS: ' + demoHumans.length, w - 16, 40);
+  ctx.fillText('SURVIVORS: ' + demoHumans.filter(h3 => h3.alive).length, w - 16, 40);
   
-  // Press start overlay (pulsing)
+  // Press start (pulsing)
   ctx.textAlign = 'center';
   const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.5;
   ctx.globalAlpha = pressAlpha;
@@ -4378,6 +4630,197 @@ function drawGameOver(ctx) {
   ctx.font = "12px 'Press Start 2P', monospace";
   ctx.fillText(Input.gamepad ? 'PRESS START TO PLAY AGAIN' : 'PRESS ENTER TO PLAY AGAIN', w / 2, h * 0.85);
   ctx.globalAlpha = 1;
+}
+
+// ============================================================================
+// 21a. CONTROLS MENU (View & Remap)
+// ============================================================================
+
+// Default bindings
+const defaultBinds = {
+  dash:      { gp: 0, key: 'ShiftLeft', label: 'Dash' },
+  smartbomb: { gp: 5, key: 'Space', label: 'Smart Bomb' },
+  pause:     { gp: 9, key: 'Escape', label: 'Pause' },
+  confirm:   { gp: 0, key: 'Enter', label: 'Confirm/Select' },
+};
+
+// Current bindings (cloned from defaults, user can remap)
+const binds = JSON.parse(JSON.stringify(defaultBinds));
+
+// Controller button names
+const GP_NAMES = ['A','B','X','Y','LB','RB','LT','RT','Back','Start','L3','R3','Up','Down','Left','Right'];
+const controlsMenu = {
+  selection: 0,
+  remapping: false, // true when waiting for new input
+  remapTarget: '', // which bind is being remapped
+  remapMode: '', // 'gp' or 'key'
+  items: [], // built dynamically
+};
+
+function buildControlsMenuItems() {
+  controlsMenu.items = [
+    { type: 'header', text: 'CONTROLLER' },
+    { type: 'display', label: 'Move', value: 'Left Stick', fixed: true },
+    { type: 'display', label: 'Aim/Shoot', value: 'Right Stick', fixed: true },
+    { type: 'bind', id: 'dash', mode: 'gp', label: binds.dash.label, value: GP_NAMES[binds.dash.gp] || '?' },
+    { type: 'bind', id: 'smartbomb', mode: 'gp', label: binds.smartbomb.label, value: GP_NAMES[binds.smartbomb.gp] || '?' },
+    { type: 'bind', id: 'pause', mode: 'gp', label: binds.pause.label, value: GP_NAMES[binds.pause.gp] || '?' },
+    { type: 'header', text: 'KEYBOARD' },
+    { type: 'display', label: 'Move', value: 'W A S D', fixed: true },
+    { type: 'display', label: 'Aim/Shoot', value: 'Arrow Keys', fixed: true },
+    { type: 'bind', id: 'dash', mode: 'key', label: binds.dash.label, value: binds.dash.key.replace('Key','').replace('Left','L-').replace('Right','R-') },
+    { type: 'bind', id: 'smartbomb', mode: 'key', label: binds.smartbomb.label, value: binds.smartbomb.key.replace('Key','').replace('Digit','') },
+    { type: 'bind', id: 'pause', mode: 'key', label: binds.pause.label, value: binds.pause.key },
+    { type: 'header', text: '' },
+    { type: 'action', label: 'RESET TO DEFAULTS', action: 'reset' },
+    { type: 'action', label: 'BACK', action: 'back' },
+  ];
+}
+
+function updateControlsMenu(dt) {
+  if (controlsMenu.remapping) {
+    // Waiting for user to press a button/key
+    if (controlsMenu.remapMode === 'gp' && Input.gamepad) {
+      for (let i = 0; i < 16; i++) {
+        if (Input.gpJust(i)) {
+          binds[controlsMenu.remapTarget].gp = i;
+          controlsMenu.remapping = false;
+          buildControlsMenuItems();
+          SFX.menuConfirm();
+          return;
+        }
+      }
+    } else if (controlsMenu.remapMode === 'key') {
+      for (const code in Input.justPressed) {
+        if (Input.justPressed[code]) {
+          binds[controlsMenu.remapTarget].key = code;
+          controlsMenu.remapping = false;
+          buildControlsMenuItems();
+          SFX.menuConfirm();
+          return;
+        }
+      }
+    }
+    // Cancel remap with B/Escape
+    if (Input.backPressed()) {
+      controlsMenu.remapping = false;
+      SFX.menuNav();
+    }
+    return;
+  }
+  
+  // Navigate
+  if (Input.menuUp()) {
+    do {
+      controlsMenu.selection = (controlsMenu.selection - 1 + controlsMenu.items.length) % controlsMenu.items.length;
+    } while (controlsMenu.items[controlsMenu.selection].type === 'header' || controlsMenu.items[controlsMenu.selection].fixed);
+    SFX.menuNav();
+  }
+  if (Input.menuDown()) {
+    do {
+      controlsMenu.selection = (controlsMenu.selection + 1) % controlsMenu.items.length;
+    } while (controlsMenu.items[controlsMenu.selection].type === 'header' || controlsMenu.items[controlsMenu.selection].fixed);
+    SFX.menuNav();
+  }
+  
+  // Confirm
+  if (Input.confirmPressed()) {
+    const item = controlsMenu.items[controlsMenu.selection];
+    if (item.type === 'bind') {
+      controlsMenu.remapping = true;
+      controlsMenu.remapTarget = item.id;
+      controlsMenu.remapMode = item.mode;
+      SFX.menuNav();
+    } else if (item.type === 'action') {
+      if (item.action === 'reset') {
+        Object.assign(binds, JSON.parse(JSON.stringify(defaultBinds)));
+        buildControlsMenuItems();
+        SFX.menuConfirm();
+      } else if (item.action === 'back') {
+        game.state = 'title';
+        game.attractPhase = 0;
+        game.attractTimer = 3; // skip past the materialization
+        SFX.menuConfirm();
+      }
+    }
+  }
+  
+  if (Input.backPressed()) {
+    game.state = 'title';
+    game.attractPhase = 0;
+    game.attractTimer = 3;
+    SFX.menuNav();
+  }
+}
+
+function drawControlsMenu(ctx) {
+  const w = game.width;
+  const h = game.height;
+  
+  ctx.fillStyle = 'rgba(0,0,0,0.92)';
+  ctx.fillRect(0, 0, w, h);
+  
+  ctx.textAlign = 'center';
+  ctx.fillStyle = C.textCyan;
+  ctx.font = "bold 18px 'Press Start 2P', monospace";
+  ctx.fillText('VIEW & MAP CONTROLS', w / 2, 50);
+  
+  const startY = 90;
+  const rowH = 24;
+  
+  for (let i = 0; i < controlsMenu.items.length; i++) {
+    const item = controlsMenu.items[i];
+    const y = startY + i * rowH;
+    const selected = i === controlsMenu.selection;
+    
+    if (item.type === 'header') {
+      ctx.fillStyle = C.textYellow;
+      ctx.font = "bold 10px 'Press Start 2P', monospace";
+      ctx.textAlign = 'center';
+      if (item.text) ctx.fillText(item.text, w / 2, y + 6);
+      continue;
+    }
+    
+    const isRebinding = controlsMenu.remapping && controlsMenu.items[controlsMenu.selection] === item;
+    
+    // Selection highlight
+    if (selected && !item.fixed) {
+      ctx.fillStyle = 'rgba(0,229,255,0.1)';
+      ctx.fillRect(w * 0.15, y - 8, w * 0.7, rowH);
+    }
+    
+    // Label
+    ctx.textAlign = 'left';
+    ctx.fillStyle = selected && !item.fixed ? C.textCyan : item.fixed ? '#555555' : C.textWhite;
+    ctx.font = `${selected && !item.fixed ? 'bold ' : ''}9px 'Press Start 2P', monospace`;
+    ctx.fillText((selected && !item.fixed ? '> ' : '  ') + item.label, w * 0.2, y + 4);
+    
+    // Value
+    ctx.textAlign = 'right';
+    if (isRebinding) {
+      ctx.fillStyle = '#ffcc00';
+      const blink = Math.floor(game.time * 4) % 2 === 0;
+      ctx.fillText(blink ? 'PRESS A BUTTON...' : '', w * 0.8, y + 4);
+    } else if (item.type === 'bind') {
+      ctx.fillStyle = selected ? '#44ff44' : '#888888';
+      ctx.fillText(`[ ${item.value} ]`, w * 0.8, y + 4);
+    } else if (item.type === 'display') {
+      ctx.fillStyle = '#555555';
+      ctx.fillText(item.value, w * 0.8, y + 4);
+    } else if (item.type === 'action') {
+      // Draw centered
+      ctx.textAlign = 'center';
+      ctx.fillStyle = selected ? (item.action === 'reset' ? '#ff4444' : C.textCyan) : '#666666';
+      ctx.font = `${selected ? 'bold ' : ''}9px 'Press Start 2P', monospace`;
+      ctx.fillText((selected ? '> ' : '') + item.label + (selected ? ' <' : ''), w / 2, y + 4);
+    }
+  }
+  
+  // Bottom hint
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#444444';
+  ctx.font = "7px 'Press Start 2P', monospace";
+  ctx.fillText(Input.gamepad ? 'A: SELECT/REMAP    B: BACK' : 'ENTER: SELECT/REMAP    ESC: BACK', w / 2, h - 30);
 }
 
 // ============================================================================
@@ -4716,7 +5159,24 @@ function init() {
       switch (game.state) {
         case 'title':
           game.attractTimer += dt;
-          if (Input.startPressed()) { startGame(); break; }
+          // Title menu navigation (only during phase 0 = title screen)
+          if (game.attractPhase === 0) {
+            if (Input.menuUp()) { game.titleMenuSelection = 0; SFX.menuNav(); game.attractTimer = 3; }
+            if (Input.menuDown()) { game.titleMenuSelection = 1; SFX.menuNav(); game.attractTimer = 3; }
+            if (Input.confirmPressed() || Input.startPressed()) {
+              if (game.titleMenuSelection === 0) { startGame(); break; }
+              if (game.titleMenuSelection === 1) {
+                game.state = 'controls';
+                buildControlsMenuItems();
+                controlsMenu.selection = 3; // first remappable item
+                SFX.menuConfirm();
+                break;
+              }
+            }
+          } else {
+            // During demo/scores phases, start pressed begins game
+            if (Input.startPressed()) { startGame(); break; }
+          }
           // Attract mode cycle: title 60s -> demo 30s -> scores 30s -> title
           if (game.attractPhase === 0 && game.attractTimer > 60) {
             game.attractPhase = 1; game.attractTimer = 0; demoInited = false; // -> demo (reinit scene)
@@ -4736,6 +5196,9 @@ function init() {
           break;
         case 'highscore_entry':
           updateHighScoreEntry(dt);
+          break;
+        case 'controls':
+          updateControlsMenu(dt);
           break;
           
         case 'playing':
@@ -4759,8 +5222,8 @@ function init() {
             SFX.levelUp();
           }
           
-          // Smart bomb trigger (RB = button 5, or Space bar)
-          if (Input.gpJust(5) || Input.wasPressed('Space')) {
+          // Smart bomb trigger (remappable)
+          if (Input.gpJust(binds.smartbomb.gp) || Input.wasPressed(binds.smartbomb.key)) {
             triggerSmartBomb();
           }
           // Update smart bomb flash
@@ -4833,6 +5296,9 @@ function init() {
       case 'highscore_entry':
         drawWorld(ctx);
         drawHighScoreEntry(ctx);
+        break;
+      case 'controls':
+        drawControlsMenu(ctx);
         break;
         
       case 'playing':
