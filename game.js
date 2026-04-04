@@ -273,10 +273,10 @@ function initAudio() {
   if (audioCtx) return;
   audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   masterGain = audioCtx.createGain();
-  masterGain.gain.value = 0.7;
+  masterGain.gain.value = 0.9;
   masterGain.connect(audioCtx.destination);
   sfxGain = audioCtx.createGain();
-  sfxGain.gain.value = 0.8;
+  sfxGain.gain.value = 1.0;
   sfxGain.connect(masterGain);
   musicGain = audioCtx.createGain();
   musicGain.gain.value = 0.3;
@@ -337,10 +337,10 @@ function playNoise(duration, volume, delay) {
 // Named sound effects
 const SFX = {
   playerLaser() {
-    // Robotron-style rapid zap — punchy, satisfying, not fatiguing
-    const f = 1100 + randF(-40, 40);
-    playTone(f, 0.035, 'square', 0.09, 500);
-    playTone(f * 0.5, 0.02, 'sawtooth', 0.03, f * 0.25, 0.01);
+    // Robotron-style rapid zap — raw, aggressive, arcade
+    const f = 1100 + randF(-60, 60);
+    playTone(f, 0.04, 'square', 0.18, 400);
+    playTone(f * 0.5, 0.025, 'sawtooth', 0.08, f * 0.2, 0.008);
   },
   playerDamage() {
     playNoise(0.08, 0.2);
@@ -392,39 +392,46 @@ const SFX = {
   },
   // Enemy-specific firing sounds
   enforcerFire() {
-    playTone(1200, 0.03, 'square', 0.1, 800);
-    playTone(900, 0.02, 'sawtooth', 0.05, 600, 0.02);
+    // Sharp electric zap — distinct from player laser
+    playTone(1400, 0.035, 'square', 0.2, 700);
+    playTone(800, 0.025, 'sawtooth', 0.1, 400, 0.015);
   },
   tankFire() {
-    playTone(150, 0.08, 'square', 0.15, 60);
-    playNoise(0.06, 0.1);
+    // Heavy cannon boom
+    playTone(120, 0.1, 'square', 0.25, 40);
+    playNoise(0.08, 0.15);
   },
   tankBounce() {
-    playTone(2000, 0.02, 'sine', 0.08, 1200);
+    // Metallic ricochet ping
+    playTone(2200, 0.025, 'sine', 0.15, 1000);
   },
   brainMissileLaunch() {
-    playTone(150, 0.2, 'sawtooth', 0.12, 500);
+    // Ominous rising tone — danger incoming
+    playTone(120, 0.25, 'sawtooth', 0.2, 600);
+    playTone(200, 0.15, 'square', 0.08, 400, 0.1);
   },
   brainAmbient() {
-    // Eerie warble when brains are on screen
-    playTone(250, 0.3, 'sine', 0.04);
-    playTone(253, 0.3, 'sine', 0.04);
+    // Eerie warble — two detuned tones beating
+    playTone(250, 0.4, 'sine', 0.06);
+    playTone(253, 0.4, 'sine', 0.06);
   },
   spheroidSpawn() {
-    playTone(300, 0.08, 'sine', 0.08, 600);
-    playTone(500, 0.06, 'sine', 0.06, 800, 0.04);
+    // Birthing pop
+    playTone(300, 0.1, 'sine', 0.15, 700);
+    playTone(500, 0.08, 'sine', 0.1, 900, 0.04);
   },
   quarkSpawn() {
-    playTone(400, 0.06, 'square', 0.08, 200);
-    playNoise(0.04, 0.06);
+    // Distorted crunch
+    playTone(400, 0.08, 'square', 0.15, 150);
+    playNoise(0.05, 0.1);
   },
   // Human death — ominous Midway-style cue
   humanDeathOminous() {
-    // Descending minor chord — dread
-    playTone(440, 0.25, 'sine', 0.1, 220);
-    playTone(349, 0.3, 'sine', 0.08, 175, 0.05);
-    playTone(293, 0.35, 'sine', 0.06, 147, 0.1);
-    playNoise(0.15, 0.04, 0.05);
+    // Descending doom chord — like Defender losing a humanoid
+    playTone(440, 0.3, 'sawtooth', 0.2, 180);
+    playTone(349, 0.35, 'square', 0.15, 140, 0.05);
+    playTone(220, 0.4, 'sawtooth', 0.12, 80, 0.12);
+    playNoise(0.2, 0.08, 0.05);
   },
   // Brain captures human — sinister
   brainCapture() {
@@ -437,25 +444,26 @@ const SFX = {
   },
   // Game transitions — Midway style
   gameStart() {
-    // Ascending fanfare like Robotron wave start
+    // Robotron-style dramatic ascending fanfare
     const notes = [196, 262, 330, 392, 523, 659, 784];
-    notes.forEach((n, i) => playTone(n, 0.08, 'square', 0.12, null, i * 0.06));
-    playNoise(0.1, 0.06, 0.42);
+    notes.forEach((n, i) => playTone(n, 0.1, 'square', 0.2, null, i * 0.06));
+    playNoise(0.12, 0.1, 0.42);
+    playTone(784, 0.2, 'sawtooth', 0.15, 1568, 0.48);
   },
   gameOverDramatic() {
-    // Defender/Robotron death — descending doom
-    playTone(600, 0.15, 'sawtooth', 0.2, 200);
-    playTone(400, 0.2, 'sawtooth', 0.15, 80, 0.2);
-    playTone(200, 0.4, 'sawtooth', 0.12, 40, 0.4);
-    playNoise(0.5, 0.08, 0.1);
-    // Final low thud
-    playTone(50, 0.3, 'sine', 0.15, 30, 0.8);
+    // Defender/Robotron total death — gut-punch descending doom
+    playTone(800, 0.2, 'sawtooth', 0.3, 200);
+    playTone(500, 0.25, 'square', 0.25, 80, 0.15);
+    playTone(250, 0.5, 'sawtooth', 0.2, 40, 0.35);
+    playNoise(0.6, 0.12, 0.1);
+    // Final low thud of doom
+    playTone(40, 0.4, 'sine', 0.25, 20, 0.85);
   },
   waveTransition() {
-    // Quick ascending sweep + impact
-    playTone(100, 0.2, 'sawtooth', 0.1, 800);
-    playNoise(0.05, 0.08, 0.2);
-    playTone(800, 0.1, 'square', 0.12, 400, 0.2);
+    // Robotron wave-start battle cry — ascending sweep + impact
+    playTone(80, 0.25, 'sawtooth', 0.18, 1000);
+    playNoise(0.08, 0.1, 0.2);
+    playTone(1000, 0.12, 'square', 0.2, 500, 0.22);
   },
   // ---- WEAPON EFFECT SOUNDS ----
   orbitalHit() {
@@ -468,17 +476,17 @@ const SFX = {
     playNoise(0.03, 0.04);
   },
   shockwaveBlast() {
-    // Deep concussive boom + expanding wash
-    playTone(80, 0.15, 'sine', 0.15, 30);
-    playTone(150, 0.12, 'square', 0.08, 50, 0.02);
-    playNoise(0.1, 0.06, 0.04);
+    // Deep concussive boom — feel it in your chest
+    playTone(60, 0.18, 'sine', 0.25, 25);
+    playTone(120, 0.15, 'square', 0.15, 40, 0.02);
+    playNoise(0.12, 0.1, 0.04);
   },
   lightningCrackle() {
-    // Electric crackling arc — multiple fast pops
-    playTone(2400 + randF(-200, 200), 0.02, 'square', 0.1, 1600);
-    playTone(1800 + randF(-200, 200), 0.015, 'square', 0.07, 1000, 0.015);
-    playTone(3000 + randF(-300, 300), 0.01, 'square', 0.05, 2000, 0.025);
-    playNoise(0.03, 0.04, 0.01);
+    // Electric crackling arc — aggressive sizzle, multiple fast pops
+    playTone(2400 + randF(-200, 200), 0.025, 'square', 0.2, 1600);
+    playTone(1800 + randF(-200, 200), 0.02, 'square', 0.15, 1000, 0.012);
+    playTone(3000 + randF(-300, 300), 0.015, 'square', 0.1, 2000, 0.022);
+    playNoise(0.04, 0.08, 0.008);
   },
   flameWhoosh() {
     // Rushing fire sound
@@ -496,10 +504,10 @@ const SFX = {
     playTone(2000, 0.01, 'square', 0.04, null, 0.02);
   },
   mineExplode() {
-    // Heavy detonation
-    playTone(100, 0.15, 'square', 0.18, 30);
-    playNoise(0.12, 0.14);
-    playTone(60, 0.1, 'sine', 0.1, 25, 0.08);
+    // Heavy detonation — satisfying kaboom
+    playTone(80, 0.18, 'square', 0.28, 25);
+    playNoise(0.15, 0.2);
+    playTone(50, 0.12, 'sine', 0.15, 20, 0.08);
   },
   plasmaFire() {
     // Energy beam charge + release
@@ -565,6 +573,62 @@ const SFX = {
     playNoise(0.03, 0.04);
   },
 };
+
+// ============================================================================
+// 6b. HEARTBEAT TENSION SYSTEM
+// ============================================================================
+
+// Heartbeat speeds up as enemies kill more humans (NOT when player rescues them)
+let heartbeatTimer = 0;
+let heartbeatRate = 1.2; // seconds between beats (slower = calmer)
+let heartbeatActive = false;
+
+function updateHeartbeat(dt) {
+  if (!audioCtx || game.state !== 'playing' || game.betweenWaves) {
+    heartbeatActive = false;
+    return;
+  }
+  
+  const totalHumans = game.waveHumansStart;
+  const lost = game.waveHumansLost;
+  const alive = game.humans.length;
+  
+  if (totalHumans <= 0 || alive <= 0) { heartbeatActive = false; return; }
+  
+  // Heartbeat activates when enemies start killing humans
+  const lossRatio = lost / totalHumans; // 0 = none lost, 1 = all lost
+  
+  if (lost === 0) {
+    heartbeatActive = false;
+    return;
+  }
+  
+  heartbeatActive = true;
+  
+  // Rate: faster as more humans die to enemies
+  // 1.2s between beats when first human dies -> 0.3s when almost all dead
+  heartbeatRate = lerp(1.2, 0.3, Math.min(1, lossRatio * 2));
+  
+  // Even faster when very few remain
+  if (alive <= 3) heartbeatRate = Math.min(heartbeatRate, 0.25);
+  if (alive <= 1) heartbeatRate = 0.18;
+  
+  heartbeatTimer -= dt;
+  if (heartbeatTimer <= 0) {
+    heartbeatTimer = heartbeatRate;
+    
+    // Volume increases with urgency
+    const vol = lerp(0.04, 0.12, lossRatio);
+    
+    // Double-beat pattern: thump-thump... thump-thump...
+    // First beat (heavier)
+    playTone(45, 0.08, 'sine', vol, 30);
+    playTone(55, 0.06, 'sine', vol * 0.6, 35, 0.02);
+    // Second beat (lighter, quick follow-up)
+    playTone(50, 0.06, 'sine', vol * 0.7, 35, heartbeatRate * 0.3);
+    playTone(60, 0.04, 'sine', vol * 0.4, 40, heartbeatRate * 0.3 + 0.02);
+  }
+}
 
 // ============================================================================
 // 7. PARTICLE SYSTEM
@@ -1201,7 +1265,7 @@ function updateEnemies(dt) {
           e.vx = (bdx / bd) * e.speed * 1.3;
           e.vy = (bdy / bd) * e.speed * 1.3;
           // Capture human on contact — convert to Prog!
-          if (nearDist < e.size + 10) {
+          if (nearDist < e.size + (target.size || 20)) {
             convertHumanToProg(target);
             SFX.brainCapture();
             // Brief pause after capture
@@ -1269,7 +1333,7 @@ function updateEnemies(dt) {
     if (e.type !== 'brain' && e.type !== 'electrode' && e.spawnTimer <= 0) {
       for (let j = game.humans.length - 1; j >= 0; j--) {
         const h = game.humans[j];
-        if (dist(e.x, e.y, h.x, h.y) < e.size + 8) {
+        if (dist(e.x, e.y, h.x, h.y) < e.size + h.size) {
           killHuman(h, j);
         }
       }
@@ -1625,15 +1689,21 @@ function updateHumans(dt) {
     }
   }
   
-  // FAIL STATE: all humans eliminated = Game Over
+  // FAIL STATE: Game over ONLY if all humans are gone AND the player rescued NONE of them
+  // (meaning enemies killed every single one). If the player saved at least one,
+  // the wave ends normally via updateWaveSystem.
   if (game.humans.length === 0 && game.waveHumansStart > 0 && game.state === 'playing' && !game.betweenWaves) {
-    game.player.alive = false;
-    game.gameOverReason = 'humans_lost';
-    emitParticles(game.player.x, game.player.y, 15, '#ff4444', 15, 100, 0.6, 3);
-    game.shakeTimer = 0.5;
-    game.shakeIntensity = 8;
-    SFX.gameOverDramatic();
-    setTimeout(() => { game.state = 'gameover'; }, 1500);
+    if (game.player.rescueCount === 0 && game.waveHumansLost > 0) {
+      // Total failure — not a single human saved
+      game.player.alive = false;
+      game.gameOverReason = 'humans_lost';
+      emitParticles(game.player.x, game.player.y, 15, '#ff4444', 15, 100, 0.6, 3);
+      game.shakeTimer = 0.5;
+      game.shakeIntensity = 8;
+      SFX.gameOverDramatic();
+      setTimeout(() => { game.state = 'gameover'; }, 1500);
+    }
+    // Otherwise: wave ends normally (handled by updateWaveSystem detecting humans.length === 0)
   }
 }
 
@@ -1816,7 +1886,7 @@ function updateProjectiles(dt) {
     // Enemy bullets kill humans on contact (but player bullets do NOT)
     for (let j = game.humans.length - 1; j >= 0; j--) {
       const h = game.humans[j];
-      if (dist(b.x, b.y, h.x, h.y) < h.size + 4) {
+      if (dist(b.x, b.y, h.x, h.y) < h.size) {
         killHuman(h, j);
         b.active = false;
         return;
@@ -3560,6 +3630,7 @@ function init() {
           updateWeapons(dt);
           updateStompy(dt);
           updateWaveSystem(dt);
+          updateHeartbeat(dt);
           updateCamera(dt);
           
           // Update particles
