@@ -313,6 +313,7 @@ function initAudio() {
   // Load WAV samples
   loadSample('rescue', 'rescue.wav');
   loadSample('smartbomb_award', 'smartbomb-award.wav');
+  loadSample('wave5', 'wave5.wav');
 }
 
 function loadSample(name, url) {
@@ -3462,7 +3463,12 @@ function startNextWave() {
   game.waveAnnounce = 2.5;
   game.betweenWaves = false;
   
-  SFX.waveTransition();
+  // Every 5th wave gets the special Joust fanfare
+  if (w % 5 === 0) {
+    playSample('wave5', 1.0);
+  } else {
+    SFX.waveTransition();
+  }
   
   // Award smart bombs every 5 waves
   if (w % 5 === 1 || w === 1) {
