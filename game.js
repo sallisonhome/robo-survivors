@@ -4062,100 +4062,162 @@ function drawTitleScreen(ctx) {
   ctx.fillText('INSPIRED BY ROBOTRON: 2084 & VAMPIRE SURVIVORS', w / 2, h * 0.90);
 }
 
+// Demo scene entities (pre-populated once, reused)
+let demoInited = false;
+let demoEnemies = [];
+let demoHumans = [];
+let demoPlayer = { x: 0, y: 0, facing: 0, animFrame: 0, animTimer: 0, alive: true, iframes: 0 };
+
+function initDemoScene() {
+  demoEnemies = [];
+  demoHumans = [];
+  const cx = WORLD_W / 2, cy = WORLD_H / 2;
+  // Spawn a variety of enemies around the center
+  const types = ['grunt','grunt','grunt','grunt','grunt','grunt','hulk','spheroid','enforcer','quark','tank','brain','prog','grunt','grunt','enforcer','tank'];
+  for (let i = 0; i < types.length; i++) {
+    const a = (i / types.length) * Math.PI * 2;
+    const r = 200 + randF(50, 350);
+    const e = createEnemy(types[i], cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    e.spawnTimer = 0; // already materialized
+    e.animTimer = randF(0, 5);
+    if (e.special.shimmerTimer !== undefined) e.special.shimmerTimer = randF(0, 5);
+    if (e.special.pulseTimer !== undefined) e.special.pulseTimer = randF(0, 5);
+    if (e.special.colorTimer !== undefined) e.special.colorTimer = randF(0, 5);
+    if (e.special.spinAngle !== undefined) e.special.spinAngle = randF(0, 6);
+    if (e.special.turretAngle !== undefined) e.special.turretAngle = a + Math.PI;
+    if (e.special.glitchTimer !== undefined) e.special.glitchTimer = randF(0, 5);
+    demoEnemies.push(e);
+  }
+  // Spawn humans
+  const htypes = ['mommy','daddy','mikey','mommy','daddy'];
+  const hcolors = { mommy: C.mommy, daddy: C.daddy, mikey: C.mikey };
+  const hsizes = { mommy: 24, daddy: 28, mikey: 20 };
+  for (let i = 0; i < htypes.length; i++) {
+    const a = (i / htypes.length) * Math.PI * 2 + 0.5;
+    const r = 150 + randF(30, 200);
+    demoHumans.push({
+      type: htypes[i], x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r,
+      vx: 0, vy: 0, color: hcolors[htypes[i]], size: hsizes[htypes[i]],
+      speed: 55, wanderTimer: 0, alive: true,
+      moveAngle: randF(0, Math.PI * 2), panicTimer: randF(0, 0.5),
+      panicDirX: 0, panicDirY: 0, animTimer: randF(0, 3), animFrame: randI(0, 3),
+    });
+  }
+  demoPlayer.x = cx;
+  demoPlayer.y = cy;
+  demoInited = true;
+}
+
 function drawAttractDemo(ctx) {
   const w = game.width;
   const h = game.height;
   const t = game.attractTimer;
   
-  ctx.fillStyle = C.bg;
-  ctx.fillRect(0, 0, w, h);
+  if (!demoInited) initDemoScene();
   
-  // Simulated gameplay scene (pre-scripted visual, not real game)
-  // Background grid scrolling
-  ctx.strokeStyle = C.grid;
-  ctx.lineWidth = 0.5;
-  const scroll = t * 30;
-  ctx.beginPath();
-  for (let x = -GRID_SIZE + (scroll % GRID_SIZE); x < w + GRID_SIZE; x += GRID_SIZE) {
-    ctx.moveTo(x, 0); ctx.lineTo(x, h);
-  }
-  for (let y = -GRID_SIZE + (scroll * 0.7 % GRID_SIZE); y < h + GRID_SIZE; y += GRID_SIZE) {
-    ctx.moveTo(0, y); ctx.lineTo(w, y);
-  }
-  ctx.stroke();
+  // Animate demo entities
+  const dt = 1/60;
+  const cx = WORLD_W / 2;
+  const cy = WORLD_H / 2;
   
-  // Fake player moving in a pattern
-  const px = w * 0.5 + Math.sin(t * 1.2) * w * 0.25;
-  const py = h * 0.5 + Math.cos(t * 0.8) * h * 0.2;
-  // Player sprite
-  ctx.fillStyle = C.player;
-  ctx.fillRect(px - 7, py - 10, 14, 16);
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(px - 5, py - 16, 10, 7);
+  // Move demo player in a circle pattern
+  demoPlayer.x = cx + Math.sin(t * 1.0) * 250;
+  demoPlayer.y = cy + Math.cos(t * 0.7) * 180;
+  demoPlayer.facing = Math.atan2(Math.cos(t * 0.7) * -0.7, Math.cos(t * 1.0) * 1.0);
+  demoPlayer.animTimer += dt;
+  if (demoPlayer.animTimer > 0.15) { demoPlayer.animFrame = (demoPlayer.animFrame + 1) % 4; demoPlayer.animTimer = 0; }
   
-  // Fake laser shots
-  for (let i = 0; i < 5; i++) {
-    const bx = px + Math.cos(t * 3 + i) * (50 + i * 40);
-    const by = py + Math.sin(t * 3 + i) * (30 + i * 25);
-    ctx.fillStyle = C.laser;
-    ctx.fillRect(bx - 4, by - 1, 8, 3);
-  }
-  
-  // Fake enemies moving across screen
-  for (let i = 0; i < 12; i++) {
-    const ex = ((t * 40 + i * 130) % (w + 100)) - 50;
-    const ey = 100 + Math.sin(t + i * 1.5) * 80 + (i % 3) * 150;
-    ctx.fillStyle = [C.grunt, C.enforcer, C.spheroid, C.quark][i % 4];
-    ctx.fillRect(ex - 8, ey - 8, 16, 16);
-  }
-  
-  // Fake humans
-  for (let i = 0; i < 4; i++) {
-    const hx = 150 + Math.sin(t * 0.5 + i * 2) * 100 + i * 200;
-    const hy = h * 0.3 + Math.cos(t * 0.7 + i) * 60 + i * 80;
-    ctx.fillStyle = [C.mommy, C.daddy, C.mikey, C.mommy][i];
-    ctx.fillRect(hx - 10, hy - 14, 20, 24);
-  }
-  
-  // Fake particle explosions
-  for (let i = 0; i < 3; i++) {
-    const ex = w * 0.3 + Math.sin(t * 2 + i * 3) * w * 0.3;
-    const ey = h * 0.4 + Math.cos(t * 1.5 + i * 2) * h * 0.2;
-    ctx.fillStyle = '#ff4444';
-    ctx.globalAlpha = 0.3 + Math.sin(t * 5 + i) * 0.3;
-    for (let j = 0; j < 5; j++) {
-      const px2 = ex + Math.cos(t * 8 + j) * (10 + j * 5);
-      const py2 = ey + Math.sin(t * 8 + j) * (10 + j * 5);
-      ctx.fillRect(px2 - 2, py2 - 2, 4, 4);
+  // Animate demo enemies (move toward player slowly, animate)
+  for (const e of demoEnemies) {
+    e.animTimer += dt;
+    const dx = demoPlayer.x - e.x, dy = demoPlayer.y - e.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 100) {
+      e.x += (dx / d) * e.speed * 0.3 * dt;
+      e.y += (dy / d) * e.speed * 0.3 * dt;
     }
+    if (e.special.shimmerTimer !== undefined) e.special.shimmerTimer += dt;
+    if (e.special.pulseTimer !== undefined) e.special.pulseTimer += dt;
+    if (e.special.colorTimer !== undefined) e.special.colorTimer += dt;
+    if (e.special.spinAngle !== undefined) e.special.spinAngle += dt * 3;
+    if (e.special.glitchTimer !== undefined) e.special.glitchTimer += dt;
+    // Keep in bounds around center
+    e.x = clamp(e.x, cx - 500, cx + 500);
+    e.y = clamp(e.y, cy - 400, cy + 400);
   }
-  ctx.globalAlpha = 1;
   
-  // "DEMO PLAY" watermark
+  // Animate demo humans (wander)
+  for (const h2 of demoHumans) {
+    h2.animTimer += dt;
+    h2.wanderTimer -= dt;
+    if (h2.wanderTimer <= 0) {
+      h2.moveAngle = randF(0, Math.PI * 2);
+      h2.vx = Math.cos(h2.moveAngle) * h2.speed;
+      h2.vy = Math.sin(h2.moveAngle) * h2.speed;
+      h2.wanderTimer = randF(0.5, 1.5);
+    }
+    h2.x += h2.vx * dt; h2.y += h2.vy * dt;
+    h2.x = clamp(h2.x, cx - 400, cx + 400);
+    h2.y = clamp(h2.y, cy - 300, cy + 300);
+    if (h2.animTimer > 0.12) { h2.animFrame = (h2.animFrame + 1) % 4; h2.animTimer = 0; }
+  }
+  
+  // Set up camera for the demo scene
+  const saveCamX = game.camX, saveCamY = game.camY;
+  const saveZoom = game.camZoom;
+  const savePlayer = { ...game.player };
+  const saveEnemies = game.enemies;
+  const saveHumans = game.humans;
+  
+  // Temporarily swap in demo entities
+  game.camX = cx - w / 2;
+  game.camY = cy - h / 2;
+  game.camZoom = 1.0;
+  game.player.x = demoPlayer.x;
+  game.player.y = demoPlayer.y;
+  game.player.facing = demoPlayer.facing;
+  game.player.animFrame = demoPlayer.animFrame;
+  game.player.alive = true;
+  game.player.iframes = 0;
+  game.enemies = demoEnemies;
+  game.humans = demoHumans;
+  
+  // Draw using the real game renderer
+  drawWorld(ctx);
+  
+  // Restore real state
+  game.camX = saveCamX; game.camY = saveCamY;
+  game.camZoom = saveZoom;
+  Object.assign(game.player, savePlayer);
+  game.enemies = saveEnemies;
+  game.humans = saveHumans;
+  
+  // Overlay: demo label + fake HUD elements
   ctx.fillStyle = '#ffffff';
-  ctx.globalAlpha = 0.3;
+  ctx.globalAlpha = 0.35;
   ctx.font = "10px 'Press Start 2P', monospace";
   ctx.textAlign = 'left';
   ctx.fillText('DEMO PLAY', 16, 24);
   ctx.globalAlpha = 1;
   
-  // Fake HUD
+  // Fake score/wave HUD
   ctx.font = "bold 12px 'Press Start 2P', monospace";
   ctx.fillStyle = C.textWhite;
   ctx.textAlign = 'left';
-  ctx.fillText('SCORE ' + Math.floor(t * 850).toLocaleString(), 16, h - 20);
+  ctx.fillText('SCORE ' + Math.floor(t * 1250).toLocaleString(), 16, h - 20);
   ctx.textAlign = 'right';
   ctx.fillText('WAVE 7', w - 16, 24);
   ctx.fillStyle = '#44ff44';
-  ctx.fillText('SURVIVORS: 12', w - 16, 40);
+  ctx.font = "9px 'Press Start 2P', monospace";
+  ctx.fillText('SURVIVORS: ' + demoHumans.length, w - 16, 40);
   
-  // Press start overlay
+  // Press start overlay (pulsing)
   ctx.textAlign = 'center';
-  const pressAlpha = 0.2 + Math.sin(t * Math.PI) * 0.4;
+  const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.5;
   ctx.globalAlpha = pressAlpha;
   ctx.fillStyle = C.textWhite;
-  ctx.font = "12px 'Press Start 2P', monospace";
-  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h - 50);
+  ctx.font = "14px 'Press Start 2P', monospace";
+  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h - 40);
   ctx.globalAlpha = 1;
 }
 
@@ -4657,7 +4719,7 @@ function init() {
           if (Input.startPressed()) { startGame(); break; }
           // Attract mode cycle: title 60s -> demo 30s -> scores 30s -> title
           if (game.attractPhase === 0 && game.attractTimer > 60) {
-            game.attractPhase = 1; game.attractTimer = 0; // -> demo
+            game.attractPhase = 1; game.attractTimer = 0; demoInited = false; // -> demo (reinit scene)
           } else if (game.attractPhase === 1 && game.attractTimer > 30) {
             game.attractPhase = 2; game.attractTimer = 0; game.attractScoreTab = 0; game.attractScoreTabTimer = 0; // -> scores
           } else if (game.attractPhase === 2 && game.attractTimer > 30) {
