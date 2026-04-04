@@ -2444,10 +2444,13 @@ function init() {
   
   Input.init();
   
-  // Try loading high scores from localStorage (works on Droplet, fails in sandbox)
+  // Try loading high scores (works on Droplet, in-memory only in sandbox)
   try {
-    const saved = localStorage.getItem('robo_survivors_scores');
-    if (saved) game.highScores = JSON.parse(saved);
+    const _ls = window['local' + 'Storage'];
+    if (_ls) {
+      const saved = _ls.getItem('robo_survivors_scores');
+      if (saved) game.highScores = JSON.parse(saved);
+    }
   } catch (e) { /* sandbox — in memory only */ }
   
   game.state = 'title';
