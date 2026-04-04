@@ -638,58 +638,59 @@ const SFX = {
 };
 
 // ============================================================================
-// 6b. HEARTBEAT TENSION SYSTEM
+// 6b. HEARTBEAT TENSION SYSTEM (Asteroids-inspired)
 // ============================================================================
+// In Asteroids, the heartbeat runs CONTINUOUSLY during gameplay.
+// Two alternating thumps (thump-THUMP) form a pair.
+// Tempo starts slow at wave begin, speeds up as humans are lost to enemies.
+// Always audible — it IS the tension. Resets to slow on each new wave.
 
-// Heartbeat speeds up as enemies kill more humans (NOT when player rescues them)
 let heartbeatTimer = 0;
-let heartbeatRate = 1.2; // seconds between beats (slower = calmer)
-let heartbeatActive = false;
+let heartbeatRate = 1.0; // time between thump pairs (seconds)
+let heartbeatPhase = 0; // 0 = first thump, 1 = second thump
+let heartbeatPairTimer = 0; // timer for the second thump in the pair
 
 function updateHeartbeat(dt) {
-  if (!audioCtx || game.state !== 'playing' || game.betweenWaves) {
-    heartbeatActive = false;
-    return;
-  }
+  if (!audioCtx || game.state !== 'playing') return;
+  if (game.betweenWaves || game.waveAnnounce > 0) return;
   
-  const totalHumans = game.waveHumansStart;
+  const totalHumans = game.waveHumansStart || 20;
   const lost = game.waveHumansLost;
   const alive = game.humans.length;
+  const lossRatio = totalHumans > 0 ? lost / totalHumans : 0;
   
-  if (totalHumans <= 0 || alive <= 0) { heartbeatActive = false; return; }
+  // ---- TEMPO: Asteroids-style, always running, speeds up with human losses ----
+  // Base: 1.0s between pairs (calm). As enemies kill humans, it accelerates.
+  // At 50% loss: ~0.5s. At 80% loss: ~0.3s. Last human: 0.2s (frantic).
+  heartbeatRate = lerp(1.0, 0.25, Math.min(1, lossRatio * 1.5));
+  if (alive <= 3 && alive > 0) heartbeatRate = Math.min(heartbeatRate, 0.22);
+  if (alive <= 1 && alive > 0) heartbeatRate = 0.15;
   
-  // Heartbeat activates when enemies start killing humans
-  const lossRatio = lost / totalHumans; // 0 = none lost, 1 = all lost
+  // ---- VOLUME: starts subtle, gets louder with urgency ----
+  const vol = lerp(0.12, 0.28, Math.min(1, lossRatio * 1.5));
+  if (alive <= 3 && alive > 0) var urgentVol = 0.32; else urgentVol = vol;
   
-  if (lost === 0) {
-    heartbeatActive = false;
-    return;
-  }
-  
-  heartbeatActive = true;
-  
-  // Rate: faster as more humans die to enemies
-  // 1.2s between beats when first human dies -> 0.3s when almost all dead
-  heartbeatRate = lerp(1.2, 0.3, Math.min(1, lossRatio * 2));
-  
-  // Even faster when very few remain
-  if (alive <= 3) heartbeatRate = Math.min(heartbeatRate, 0.25);
-  if (alive <= 1) heartbeatRate = 0.18;
-  
+  // ---- THUMP PAIR TIMING ----
   heartbeatTimer -= dt;
+  heartbeatPairTimer -= dt;
+  
   if (heartbeatTimer <= 0) {
     heartbeatTimer = heartbeatRate;
     
-    // Volume increases with urgency
-    const vol = lerp(0.04, 0.12, lossRatio);
+    // FIRST THUMP (lower, heavier) — the "lub"
+    playTone(80, 0.1, 'square', urgentVol, 40);
+    playTone(60, 0.08, 'sine', urgentVol * 0.7, 30, 0.02);
     
-    // Double-beat pattern: thump-thump... thump-thump...
-    // First beat (heavier)
-    playTone(45, 0.08, 'sine', vol, 30);
-    playTone(55, 0.06, 'sine', vol * 0.6, 35, 0.02);
-    // Second beat (lighter, quick follow-up)
-    playTone(50, 0.06, 'sine', vol * 0.7, 35, heartbeatRate * 0.3);
-    playTone(60, 0.04, 'sine', vol * 0.4, 40, heartbeatRate * 0.3 + 0.02);
+    // Schedule second thump
+    heartbeatPairTimer = heartbeatRate * 0.28; // second beat comes quickly after first
+    heartbeatPhase = 1;
+  }
+  
+  if (heartbeatPhase === 1 && heartbeatPairTimer <= 0) {
+    // SECOND THUMP (slightly higher, shorter) — the "dub"
+    playTone(100, 0.07, 'square', urgentVol * 0.85, 50);
+    playTone(75, 0.06, 'sine', urgentVol * 0.5, 40, 0.015);
+    heartbeatPhase = 0;
   }
 }
 
