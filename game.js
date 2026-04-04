@@ -9,8 +9,8 @@
 // 1. CONSTANTS & CONFIGURATION
 // ============================================================================
 
-const WORLD_W = 4800;
-const WORLD_H = 4800;
+const WORLD_W = 2400;
+const WORLD_H = 2400;
 const GRID_SIZE = 64;
 const TICK_RATE = 1000 / 60;
 const PLAYER_SPEED = 280;
@@ -337,8 +337,10 @@ function playNoise(duration, volume, delay) {
 // Named sound effects
 const SFX = {
   playerLaser() {
-    const f = 880 + randF(-20, 20);
-    playTone(f, 0.06, 'square', 0.12, 660);
+    // Robotron-style rapid zap — punchy, satisfying, not fatiguing
+    const f = 1100 + randF(-40, 40);
+    playTone(f, 0.035, 'square', 0.09, 500);
+    playTone(f * 0.5, 0.02, 'sawtooth', 0.03, f * 0.25, 0.01);
   },
   playerDamage() {
     playNoise(0.08, 0.2);
@@ -387,6 +389,180 @@ const SFX = {
   hulkThud() {
     playTone(80, 0.1, 'sine', 0.15);
     playNoise(0.05, 0.08);
+  },
+  // Enemy-specific firing sounds
+  enforcerFire() {
+    playTone(1200, 0.03, 'square', 0.1, 800);
+    playTone(900, 0.02, 'sawtooth', 0.05, 600, 0.02);
+  },
+  tankFire() {
+    playTone(150, 0.08, 'square', 0.15, 60);
+    playNoise(0.06, 0.1);
+  },
+  tankBounce() {
+    playTone(2000, 0.02, 'sine', 0.08, 1200);
+  },
+  brainMissileLaunch() {
+    playTone(150, 0.2, 'sawtooth', 0.12, 500);
+  },
+  brainAmbient() {
+    // Eerie warble when brains are on screen
+    playTone(250, 0.3, 'sine', 0.04);
+    playTone(253, 0.3, 'sine', 0.04);
+  },
+  spheroidSpawn() {
+    playTone(300, 0.08, 'sine', 0.08, 600);
+    playTone(500, 0.06, 'sine', 0.06, 800, 0.04);
+  },
+  quarkSpawn() {
+    playTone(400, 0.06, 'square', 0.08, 200);
+    playNoise(0.04, 0.06);
+  },
+  // Human death — ominous Midway-style cue
+  humanDeathOminous() {
+    // Descending minor chord — dread
+    playTone(440, 0.25, 'sine', 0.1, 220);
+    playTone(349, 0.3, 'sine', 0.08, 175, 0.05);
+    playTone(293, 0.35, 'sine', 0.06, 147, 0.1);
+    playNoise(0.15, 0.04, 0.05);
+  },
+  // Brain captures human — sinister
+  brainCapture() {
+    playTone(600, 0.3, 'sawtooth', 0.12, 200);
+    playTone(400, 0.2, 'square', 0.06, 100, 0.1);
+  },
+  // Grunt march (low rumble when many grunts)
+  gruntMarch() {
+    playTone(60, 0.08, 'square', 0.04);
+  },
+  // Game transitions — Midway style
+  gameStart() {
+    // Ascending fanfare like Robotron wave start
+    const notes = [196, 262, 330, 392, 523, 659, 784];
+    notes.forEach((n, i) => playTone(n, 0.08, 'square', 0.12, null, i * 0.06));
+    playNoise(0.1, 0.06, 0.42);
+  },
+  gameOverDramatic() {
+    // Defender/Robotron death — descending doom
+    playTone(600, 0.15, 'sawtooth', 0.2, 200);
+    playTone(400, 0.2, 'sawtooth', 0.15, 80, 0.2);
+    playTone(200, 0.4, 'sawtooth', 0.12, 40, 0.4);
+    playNoise(0.5, 0.08, 0.1);
+    // Final low thud
+    playTone(50, 0.3, 'sine', 0.15, 30, 0.8);
+  },
+  waveTransition() {
+    // Quick ascending sweep + impact
+    playTone(100, 0.2, 'sawtooth', 0.1, 800);
+    playNoise(0.05, 0.08, 0.2);
+    playTone(800, 0.1, 'square', 0.12, 400, 0.2);
+  },
+  // ---- WEAPON EFFECT SOUNDS ----
+  orbitalHit() {
+    // Crystalline chime when orb hits
+    playTone(1800 + randF(-100, 100), 0.03, 'sine', 0.06, 1200);
+  },
+  missilelaunch() {
+    // Whoosh + ignition
+    playTone(600, 0.05, 'sawtooth', 0.08, 400);
+    playNoise(0.03, 0.04);
+  },
+  shockwaveBlast() {
+    // Deep concussive boom + expanding wash
+    playTone(80, 0.15, 'sine', 0.15, 30);
+    playTone(150, 0.12, 'square', 0.08, 50, 0.02);
+    playNoise(0.1, 0.06, 0.04);
+  },
+  lightningCrackle() {
+    // Electric crackling arc — multiple fast pops
+    playTone(2400 + randF(-200, 200), 0.02, 'square', 0.1, 1600);
+    playTone(1800 + randF(-200, 200), 0.015, 'square', 0.07, 1000, 0.015);
+    playTone(3000 + randF(-300, 300), 0.01, 'square', 0.05, 2000, 0.025);
+    playNoise(0.03, 0.04, 0.01);
+  },
+  flameWhoosh() {
+    // Rushing fire sound
+    playNoise(0.06, 0.05);
+    playTone(200, 0.04, 'sawtooth', 0.03, 100);
+  },
+  spreadBlast() {
+    // Shotgun scatter
+    playTone(700, 0.03, 'square', 0.08, 400);
+    playNoise(0.025, 0.06);
+  },
+  mineArm() {
+    // Click-beep when mine arms
+    playTone(1500, 0.01, 'square', 0.06);
+    playTone(2000, 0.01, 'square', 0.04, null, 0.02);
+  },
+  mineExplode() {
+    // Heavy detonation
+    playTone(100, 0.15, 'square', 0.18, 30);
+    playNoise(0.12, 0.14);
+    playTone(60, 0.1, 'sine', 0.1, 25, 0.08);
+  },
+  plasmaFire() {
+    // Energy beam charge + release
+    playTone(200, 0.08, 'sawtooth', 0.1, 800);
+    playTone(400, 0.06, 'sine', 0.06, 1200, 0.04);
+  },
+  stompyTransform() {
+    // Massive powering-up sound
+    playTone(80, 0.3, 'sawtooth', 0.2, 400);
+    playTone(200, 0.25, 'square', 0.12, 800, 0.1);
+    playNoise(0.2, 0.08, 0.05);
+    playTone(600, 0.15, 'sine', 0.1, 1200, 0.25);
+  },
+  stompyCrush() {
+    // Heavy stomp impact
+    playTone(50, 0.08, 'sine', 0.12, 25);
+    playNoise(0.04, 0.06);
+  },
+  // ---- DISTINCT ENEMY DEATH SOUNDS ----
+  gruntDeath() {
+    playNoise(0.03, 0.1);
+    playTone(400, 0.04, 'square', 0.08, 100);
+  },
+  hulkKnockback() {
+    playTone(60, 0.12, 'sine', 0.12);
+    playNoise(0.04, 0.06);
+  },
+  spheroidPop() {
+    // Bubble burst
+    playTone(300, 0.04, 'sine', 0.1, 800);
+    playTone(600, 0.03, 'sine', 0.06, 1200, 0.02);
+  },
+  enforcerShatter() {
+    // Glass-like shatter
+    playTone(1500, 0.03, 'square', 0.08, 600);
+    playNoise(0.03, 0.06);
+  },
+  quarkExplode() {
+    // Spinning-up then pop
+    playTone(300, 0.06, 'sawtooth', 0.08, 1200);
+    playNoise(0.04, 0.06, 0.04);
+  },
+  tankDestroy() {
+    // Metallic crunch
+    playTone(200, 0.08, 'square', 0.12, 60);
+    playNoise(0.06, 0.08);
+    playTone(100, 0.06, 'sawtooth', 0.06, 40, 0.06);
+  },
+  brainDeath() {
+    // Satisfying multi-stage: crack then warble
+    playTone(800, 0.04, 'square', 0.12, 200);
+    playTone(400, 0.15, 'sine', 0.08, 100, 0.05);
+    playNoise(0.06, 0.06, 0.02);
+  },
+  progDeath() {
+    // Glitchy dissolution
+    playTone(600, 0.03, 'square', 0.06, 200);
+    playTone(900, 0.02, 'square', 0.04, 300, 0.02);
+  },
+  electrodeFry() {
+    // Electric sizzle
+    playTone(100, 0.04, 'sawtooth', 0.06, 50);
+    playNoise(0.03, 0.04);
   },
 };
 
@@ -510,6 +686,8 @@ const game = {
   waveHumansStart: 0, // humans at wave start
   waveHumansLost: 0,  // humans killed this wave
   gameOverReason: '', // 'death' or 'humans_lost'
+  humanDeathPopTimer: 0,
+  humanDeathPopCount: 0,
   
   // Enemies
   enemies: [],
@@ -661,7 +839,7 @@ function damagePlayer(amount) {
     game.gameOverReason = 'death';
     emitParticles(p.x, p.y, 30, C.player, 20, 200, 1.0, 4);
     emitParticles(p.x, p.y, 20, '#ffffff', 15, 150, 0.8, 3);
-    SFX.playerDeath();
+    SFX.gameOverDramatic();
     game.shakeTimer = 0.4;
     game.shakeIntensity = 8;
     setTimeout(() => { game.state = 'gameover'; }, 1500);
@@ -918,6 +1096,7 @@ function updateEnemies(dt) {
           e.special.spawnTimer = randF(3, 6);
           game.waveEnemiesTotal++;
           emitParticles(e.x, e.y, 4, C.spheroid, 10, 60, 0.3, 3);
+          SFX.spheroidSpawn();
         }
         break;
       }
@@ -939,6 +1118,7 @@ function updateEnemies(dt) {
           fireEnemyBullet(e.x, e.y, p.x, p.y, 320, 10, 'spark');
           e.special.fireTimer = randF(0.8, 2.0);
           emitParticles(e.x, e.y, 2, C.enforcerSpark, 5, 40, 0.15, 2);
+          SFX.enforcerFire();
         }
         break;
       }
@@ -960,6 +1140,7 @@ function updateEnemies(dt) {
           e.special.spawnTimer = randF(4, 7);
           game.waveEnemiesTotal++;
           emitParticles(e.x, e.y, 5, C.quark, 12, 80, 0.3, 3);
+          SFX.quarkSpawn();
         }
         break;
       }
@@ -994,6 +1175,7 @@ function updateEnemies(dt) {
             e.y + Math.sin(e.special.turretAngle) * 100, 280, 12, 'shell');
           if (b) { b.maxBounces = 2; b.bounces = 0; }
           e.special.fireTimer = randF(1.8, 3.5);
+          SFX.tankFire();
           // Recoil
           e.vx -= Math.cos(e.special.turretAngle) * 30;
           e.vy -= Math.sin(e.special.turretAngle) * 30;
@@ -1021,6 +1203,7 @@ function updateEnemies(dt) {
           // Capture human on contact — convert to Prog!
           if (nearDist < e.size + 10) {
             convertHumanToProg(target);
+            SFX.brainCapture();
             // Brief pause after capture
             e.vx *= 0.1; e.vy *= 0.1;
           }
@@ -1038,6 +1221,7 @@ function updateEnemies(dt) {
           fireEnemyBullet(e.x, e.y, p.x, p.y, 200, 15, 'cruise');
           e.special.fireTimer = randF(2, 4);
           emitParticles(e.x, e.y, 3, '#ff4466', 8, 50, 0.2, 2);
+          SFX.brainMissileLaunch();
         }
         break;
       }
@@ -1121,7 +1305,18 @@ function killEnemy(e, index) {
     }
   }
   
-  SFX.robotExplode();
+  // Type-specific death sound
+  switch (e.type) {
+    case 'grunt': SFX.gruntDeath(); break;
+    case 'spheroid': SFX.spheroidPop(); break;
+    case 'enforcer': SFX.enforcerShatter(); break;
+    case 'quark': SFX.quarkExplode(); break;
+    case 'tank': SFX.tankDestroy(); break;
+    case 'brain': SFX.brainDeath(); break;
+    case 'prog': SFX.progDeath(); break;
+    case 'electrode': SFX.electrodeFry(); break;
+    default: SFX.robotExplode();
+  }
   game.waveEnemiesRemaining--;
 }
 
@@ -1319,8 +1514,8 @@ function drawEnemies(ctx) {
 function spawnHumans(count) {
   const types = ['mommy', 'daddy', 'mikey'];
   const colors = { mommy: C.mommy, daddy: C.daddy, mikey: C.mikey };
-  const sizes = { mommy: 9, daddy: 10, mikey: 7 };
-  const speeds = { mommy: 55, daddy: 50, mikey: 70 }; // Mikey is fastest (small child running)
+  const sizes = { mommy: 24, daddy: 28, mikey: 20 }; // 3x original — must be visible
+  const speeds = { mommy: 60, daddy: 55, mikey: 80 }; // Mikey is fastest (small child running)
   
   for (let i = 0; i < count; i++) {
     const type = types[randI(0, 2)];
@@ -1435,9 +1630,9 @@ function updateHumans(dt) {
     game.player.alive = false;
     game.gameOverReason = 'humans_lost';
     emitParticles(game.player.x, game.player.y, 15, '#ff4444', 15, 100, 0.6, 3);
-    game.shakeTimer = 0.4;
-    game.shakeIntensity = 6;
-    SFX.playerDeath();
+    game.shakeTimer = 0.5;
+    game.shakeIntensity = 8;
+    SFX.gameOverDramatic();
     setTimeout(() => { game.state = 'gameover'; }, 1500);
   }
 }
@@ -1465,14 +1660,23 @@ function killHuman(h, index) {
   game.humans.splice(index, 1);
   game.waveHumansLost++;
   
-  emitParticles(h.x, h.y, 8, h.color, 15, 80, 0.5, 3);
-  emitParticles(h.x, h.y, 4, '#ff0000', 10, 60, 0.3, 2);
-  spawnFloatingText(h.x, h.y - 10, 'HUMAN LOST', '#ff4444', 9);
-  SFX.humanDeath();
+  // Big death effect — this should feel BAD
+  emitParticles(h.x, h.y, 15, h.color, 20, 120, 0.7, 4);
+  emitParticles(h.x, h.y, 8, '#ff0000', 15, 80, 0.4, 3);
+  spawnFloatingText(h.x, h.y - 15, 'HUMAN LOST', '#ff4444', 12);
   
-  // Screen flash red when human dies (subtle urgency)
-  game.flashTimer = 0.1;
-  game.flashColor = '#ff000030';
+  // Ominous Midway-style death cue — the player should feel dread
+  SFX.humanDeathOminous();
+  
+  // Screen flash red + shake
+  game.flashTimer = 0.15;
+  game.flashColor = '#ff0000';
+  game.shakeTimer = 0.15;
+  game.shakeIntensity = 3;
+  
+  // Pop the human count on screen (large, center, temporary)
+  game.humanDeathPopTimer = 1.2; // show for 1.2 seconds
+  game.humanDeathPopCount = game.humans.length;
 }
 
 function convertHumanToProg(h) {
@@ -1588,11 +1792,11 @@ function updateProjectiles(dt) {
     // Tank shell bouncing
     if (b.type === 'shell') {
       if (b.x < 0 || b.x > WORLD_W) {
-        if (b.bounces < b.maxBounces) { b.vx *= -1; b.bounces++; }
+        if (b.bounces < b.maxBounces) { b.vx *= -1; b.bounces++; SFX.tankBounce(); }
         else { b.active = false; return; }
       }
       if (b.y < 0 || b.y > WORLD_H) {
-        if (b.bounces < b.maxBounces) { b.vy *= -1; b.bounces++; }
+        if (b.bounces < b.maxBounces) { b.vy *= -1; b.bounces++; SFX.tankBounce(); }
         else { b.active = false; return; }
       }
     } else {
@@ -1606,6 +1810,17 @@ function updateProjectiles(dt) {
     if (game.player.alive && dist(b.x, b.y, game.player.x, game.player.y) < PLAYER_SIZE + 4) {
       damagePlayer(b.dmg);
       b.active = false;
+      return;
+    }
+    
+    // Enemy bullets kill humans on contact (but player bullets do NOT)
+    for (let j = game.humans.length - 1; j >= 0; j--) {
+      const h = game.humans[j];
+      if (dist(b.x, b.y, h.x, h.y) < h.size + 4) {
+        killHuman(h, j);
+        b.active = false;
+        return;
+      }
     }
   });
 }
@@ -1957,6 +2172,7 @@ function updateWeapons(dt) {
         if (!e.active || !e.alive || e.spawnTimer > 0) continue;
         if (dist(ox, oy, e.x, e.y) < e.size + 8) {
           damageEnemy(e, orbDmg);
+          SFX.orbitalHit();
         }
       }
     }
@@ -1993,7 +2209,7 @@ function updateWeapons(dt) {
         b._homingStr = 3.0 + misLv * 0.5;
         b._life = 3.0;
       }
-      playTone(600, 0.05, 'sawtooth', 0.08, 400);
+      SFX.missilelaunch();
     }
   }
 
@@ -2026,7 +2242,7 @@ function updateWeapons(dt) {
           }
         }
       }
-      playTone(150, 0.15, 'sine', 0.12, 50);
+      SFX.shockwaveBlast();
       game.shakeTimer = 0.1;
       game.shakeIntensity = 3;
     }
@@ -2070,7 +2286,7 @@ function updateWeapons(dt) {
         current = { x: nearest.x, y: nearest.y };
       }
       if (weaponState.lightning.arcs.length > 0) {
-        playTone(1200, 0.04, 'square', 0.08, 800);
+        SFX.lightningCrackle();
       }
     }
     // Decay arc visuals
@@ -2094,6 +2310,7 @@ function updateWeapons(dt) {
       const last = trail.length > 0 ? trail[trail.length - 1] : null;
       if (!last || dist(last.x, last.y, p.x, p.y) > 10) {
         trail.push({ x: p.x, y: p.y, life: flLife, maxLife: flLife, radius: flWidth, dmg: flDmg });
+        if (!last || dist(last.x, last.y, p.x, p.y) > 40) SFX.flameWhoosh();
       }
     }
     // Update trail segments
@@ -2139,7 +2356,7 @@ function updateWeapons(dt) {
         b.dmg = spDmg;
         b._type = 'spread';
       }
-      playTone(700, 0.04, 'square', 0.06, 500);
+      SFX.spreadBlast();
     }
   }
 
@@ -2172,7 +2389,7 @@ function updateWeapons(dt) {
       if (m.life <= 0) { weaponState.mines.placed.splice(i, 1); continue; }
       if (!m.armed) {
         m.armTimer -= dt;
-        if (m.armTimer <= 0) m.armed = true;
+        if (m.armTimer <= 0) { m.armed = true; SFX.mineArm(); }
         continue;
       }
       // Check proximity to enemies
@@ -2193,7 +2410,7 @@ function updateWeapons(dt) {
         }
         emitParticles(m.x, m.y, 15, '#ff8800', 20, 180, 0.5, 4);
         emitParticles(m.x, m.y, 8, '#ffcc00', 15, 120, 0.3, 3);
-        playTone(120, 0.15, 'square', 0.12, 40);
+        SFX.mineExplode();
         game.shakeTimer = 0.08;
         game.shakeIntensity = 2;
         weaponState.mines.placed.splice(i, 1);
@@ -2227,7 +2444,7 @@ function updateWeapons(dt) {
           life: 2.0, _hitSet: new Set(),
         });
       }
-      playTone(200, 0.12, 'sawtooth', 0.1, 600);
+      SFX.plasmaFire();
     }
     // Update plasma waves
     for (let i = weaponState.plasma.waves.length - 1; i >= 0; i--) {
@@ -2495,6 +2712,7 @@ function activateStompy() {
   // Flash
   game.flashTimer = 0.3;
   game.flashColor = '#ffffff';
+  SFX.stompyTransform();
 }
 
 function updateStompy(dt) {
@@ -2543,73 +2761,51 @@ function updateStompy(dt) {
 
 function startNextWave() {
   game.wave++;
-  game.player.rescueCount = 0; // Reset per-wave rescue counter
+  game.player.rescueCount = 0;
   
   const w = game.wave;
   const isBrainWave = w % 5 === 0;
   
-  // Calculate enemy budget
-  let grunts = 30 + w * 8;
-  let electrodes = 8 + w * 2;
-  let hulks = w >= 2 ? Math.floor(w * 0.8) : 0;
-  let spheroids = w >= 3 ? Math.floor(w * 0.4) : 0;
-  let quarks = w >= 4 ? Math.floor(w * 0.3) : 0;
-  let brains = 0;
-  let humanCount = 20 + w * 3;
-  
-  if (isBrainWave) {
-    brains = 4 + w;
-    hulks = 0; // No hulks on brain waves
-    humanCount = 30 + w * 4; // Extra humans
-    grunts = Math.floor(grunts * 0.6);
+  // Clear non-Hulk enemies from previous wave
+  for (let i = game.enemies.length - 1; i >= 0; i--) {
+    const e = game.enemies[i];
+    if (e.type !== 'hulk') { e.active = false; game.enemies.splice(i, 1); }
   }
   
-  // Spawn initial batch (60% immediately, rest over time)
-  const immediateRatio = 0.6;
-  
-  // Spawn electrodes (all at once, placed around the map)
+  // Spawn electrodes as static hazards
+  const electrodes = 5 + w * 2;
   for (let i = 0; i < electrodes; i++) spawnEnemyRandom('electrode');
   
-  // Spawn some grunts immediately
-  const immediateGrunts = Math.floor(grunts * immediateRatio);
-  for (let i = 0; i < immediateGrunts; i++) spawnEnemyAtEdge('grunt');
+  // Hulks: persistent across waves, add more each wave
+  const newHulks = w >= 2 ? Math.min(Math.floor(w * 0.5), 4) : 0;
+  if (!isBrainWave) { for (let i = 0; i < newHulks; i++) spawnEnemyRandom('hulk'); }
   
-  // Hulks scattered
-  for (let i = 0; i < hulks; i++) spawnEnemyRandom('hulk');
-  
-  // Spheroids
-  const immSpheroids = Math.floor(spheroids * immediateRatio);
-  for (let i = 0; i < immSpheroids; i++) spawnEnemyAtEdge('spheroid');
-  
-  // Quarks
-  const immQuarks = Math.floor(quarks * immediateRatio);
-  for (let i = 0; i < immQuarks; i++) spawnEnemyAtEdge('quark');
-  
-  // Brains
-  if (brains > 0) {
-    for (let i = 0; i < brains; i++) spawnEnemyAtEdge('brain');
+  // Brains on brain waves
+  if (isBrainWave) {
+    const brainCount = 3 + Math.floor(w / 2);
+    for (let i = 0; i < brainCount; i++) spawnEnemyAtEdge('brain');
   }
   
-  // Budget for sub-wave spawning
-  game.waveSpawnBudget = grunts - immediateGrunts + (spheroids - immSpheroids) + (quarks - immQuarks);
-  game.waveSpawnTimer = 0;
+  // Spawn initial enemies
+  const initGrunts = 15 + w * 5;
+  for (let i = 0; i < initGrunts; i++) spawnEnemyAtEdge('grunt');
+  if (w >= 3) { for (let i = 0; i < Math.min(w - 2, 3); i++) spawnEnemyAtEdge('spheroid'); }
+  if (w >= 4) { for (let i = 0; i < Math.min(w - 3, 2); i++) spawnEnemyAtEdge('quark'); }
   
-  // Track remaining killable enemies
-  let killable = 0;
-  for (const e of game.enemies) {
-    if (e.active && !e.special.invincible) killable++;
-  }
-  game.waveEnemiesRemaining = killable;
-  game.waveEnemiesTotal = killable;
-  
-  // Spawn humans
+  // Spawn humans — this is what drives the wave
+  const humanCount = 10 + w * 3;
   spawnHumans(humanCount);
   
-  // Announce
+  // Set continuous spawn rate (enemies keep coming until humans are resolved)
+  game.waveSpawnTimer = 0;
+  game.waveSpawnRate = Math.max(0.8, 3.0 - w * 0.15); // seconds between spawn bursts
+  game.waveSpawnCount = Math.min(3 + Math.floor(w * 0.5), 8); // enemies per burst
+  
+  // Announce with transition
   game.waveAnnounce = 2.5;
   game.betweenWaves = false;
   
-  SFX.waveStart();
+  SFX.waveTransition();
 }
 
 function updateWaveSystem(dt) {
@@ -2626,44 +2822,63 @@ function updateWaveSystem(dt) {
     return;
   }
   
-  // Sub-wave spawning
-  if (game.waveSpawnBudget > 0) {
-    game.waveSpawnTimer -= dt;
-    if (game.waveSpawnTimer <= 0) {
-      const spawnCount = randI(2, 5);
-      for (let i = 0; i < spawnCount && game.waveSpawnBudget > 0; i++) {
-        // Mix of enemy types
-        const r = Math.random();
-        if (r < 0.7) spawnEnemyAtEdge('grunt');
-        else if (r < 0.85) spawnEnemyAtEdge('spheroid');
-        else spawnEnemyAtEdge('quark');
-        game.waveSpawnBudget--;
-        game.waveEnemiesRemaining++;
-        game.waveEnemiesTotal++;
-      }
-      game.waveSpawnTimer = randF(3, 7);
-    }
-  }
+  // Wave is driven by HUMANS, not enemy counts
+  // Enemies spawn continuously until all humans are either saved or dead
+  // Wave ends when: humans.length === 0 (all saved or killed)
   
-  // Check wave clear
-  if (game.waveEnemiesRemaining <= 0 && game.waveSpawnBudget <= 0) {
-    // Count remaining killable enemies
-    let killable = 0;
-    for (const e of game.enemies) {
-      if (e.active && !e.special.invincible && e.type !== 'electrode') killable++;
-    }
-    if (killable <= 0) {
+  const humansRemaining = game.humans.length;
+  
+  if (humansRemaining === 0) {
+    // Wave complete! (if not game over from all dying)
+    if (game.player.alive && game.state === 'playing') {
       game.betweenWaves = true;
-      game.waveClearTimer = 3.5;
+      game.waveClearTimer = 3.0;
       SFX.waveClear();
       game.player.score += 500 * game.wave;
       const saved = game.player.rescueCount;
-      const lost = game.waveHumansLost;
-      const total = saved + lost + game.humans.length;
-      spawnFloatingText(game.player.x, game.player.y - 40, `WAVE ${game.wave} CLEAR! +${500 * game.wave}`, C.textYellow, 16);
-      spawnFloatingText(game.player.x, game.player.y - 15, `HUMANS SAVED: ${saved} / ${total}`, saved > 0 ? '#44ff44' : '#ff4444', 11);
+      const totalHumans = saved + game.waveHumansLost;
+      spawnFloatingText(game.player.x, game.player.y - 40, `WAVE ${game.wave} CLEAR!`, C.textYellow, 18);
+      spawnFloatingText(game.player.x, game.player.y - 10, `HUMANS SAVED: ${saved} / ${totalHumans}`, saved > 0 ? '#44ff44' : '#ff4444', 12);
+      spawnFloatingText(game.player.x, game.player.y + 15, `+${500 * game.wave} BONUS`, C.textCyan, 10);
+      
+      // Kill remaining non-Hulk enemies for clean transition
+      game.shakeTimer = 0.2;
+      game.shakeIntensity = 4;
+    }
+    return;
+  }
+  
+  // CONTINUOUS ENEMY SPAWNING — keeps pressure on until humans are resolved
+  game.waveSpawnTimer -= dt;
+  if (game.waveSpawnTimer <= 0) {
+    game.waveSpawnTimer = game.waveSpawnRate;
+    const count = game.waveSpawnCount;
+    for (let i = 0; i < count; i++) {
+      const w = game.wave;
+      const r = Math.random();
+      if (r < 0.55) {
+        spawnEnemyAtEdge('grunt');
+      } else if (r < 0.70 && w >= 3) {
+        spawnEnemyAtEdge('enforcer');
+      } else if (r < 0.80 && w >= 4) {
+        spawnEnemyAtEdge('tank');
+      } else if (r < 0.88 && w >= 3) {
+        spawnEnemyAtEdge('spheroid');
+      } else if (r < 0.94 && w >= 4) {
+        spawnEnemyAtEdge('quark');
+      } else {
+        spawnEnemyAtEdge('grunt');
+      }
     }
   }
+  
+  // Periodic grunt march sound when many grunts on screen
+  const gruntCount = game.enemies.filter(e => e.active && e.type === 'grunt').length;
+  if (gruntCount > 10 && Math.random() < 0.01) SFX.gruntMarch();
+  
+  // Brain ambient sound
+  const brainCount = game.enemies.filter(e => e.active && e.type === 'brain').length;
+  if (brainCount > 0 && Math.random() < 0.005) SFX.brainAmbient();
 }
 
 // ============================================================================
@@ -2875,6 +3090,69 @@ function drawHUD(ctx) {
       ctx.fillText('BRAIN WAVE', w / 2, h / 2 + 35);
     }
     ctx.globalAlpha = 1;
+  }
+  
+  // ---- HUMAN DIRECTION ARROWS around player ----
+  // Subtle arrows pointing toward nearest off-screen humans
+  if (game.humans.length > 0 && game.player.alive) {
+    const cx = game.width / 2;
+    const cy = game.height / 2;
+    const arrowDist = 60; // distance from center of screen
+    const shown = new Set();
+    // Sort by distance, show up to 5 nearest
+    const sorted = game.humans
+      .map(h => ({ h, d: dist(game.player.x, game.player.y, h.x, h.y) }))
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 5);
+    for (const { h, d: hd } of sorted) {
+      // Only show arrows for humans off-screen or far away
+      if (hd < 150) continue;
+      const a = angle(game.player.x, game.player.y, h.x, h.y);
+      const ax = cx + Math.cos(a) * arrowDist;
+      const ay = cy + Math.sin(a) * arrowDist;
+      // Arrow opacity based on distance (closer = more visible)
+      const alpha = clamp(1 - hd / 1200, 0.2, 0.7);
+      ctx.save();
+      ctx.translate(ax, ay);
+      ctx.rotate(a);
+      ctx.globalAlpha = alpha;
+      // Arrow triangle
+      ctx.fillStyle = '#44ff44';
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-5, -6);
+      ctx.lineTo(-5, 6);
+      ctx.closePath();
+      ctx.fill();
+      // Distance indicator
+      ctx.globalAlpha = alpha * 0.6;
+      ctx.fillStyle = '#44ff44';
+      ctx.rotate(-a); // un-rotate for text
+      ctx.font = "6px 'Press Start 2P', monospace";
+      ctx.textAlign = 'center';
+      ctx.fillText(Math.floor(hd / 10) + '', 0, -10);
+      ctx.restore();
+    }
+    ctx.globalAlpha = 1;
+  }
+  
+  // ---- HUMAN DEATH POP — big center-screen count when a human dies ----
+  if (game.humanDeathPopTimer > 0) {
+    game.humanDeathPopTimer -= 1/60;
+    const popAlpha = Math.min(1, game.humanDeathPopTimer / 0.3);
+    const popScale = 1 + (1 - popAlpha) * 0.3;
+    ctx.save();
+    ctx.globalAlpha = popAlpha * 0.9;
+    ctx.fillStyle = game.humanDeathPopCount <= 3 ? '#ff0000' : '#ff4444';
+    ctx.font = `bold ${Math.floor(36 * popScale)}px 'Press Start 2P', monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`${game.humanDeathPopCount} HUMANS LEFT`, game.width / 2, game.height * 0.35);
+    if (game.humanDeathPopCount <= 3 && game.humanDeathPopCount > 0) {
+      ctx.font = "14px 'Press Start 2P', monospace";
+      ctx.fillStyle = '#ff6666';
+      ctx.fillText('SAVE THEM!', game.width / 2, game.height * 0.35 + 35);
+    }
+    ctx.restore();
   }
   
   // Minimap
@@ -3215,6 +3493,7 @@ function startGame() {
   initAudio();
   resumeAudio();
   resetGame();
+  SFX.gameStart();
 }
 
 function init() {
