@@ -761,8 +761,8 @@ const game = {
   
   // Projectiles
   playerBullets: new Pool(() => ({
-    active: false, x: 0, y: 0, vx: 0, vy: 0, dmg: 1, prevX: 0, prevY: 0,
-  }), 200),
+    active: false, x: 0, y: 0, vx: 0, vy: 0, dmg: 1, prevX: 0, prevY: 0, _type: 'laser',
+  }), 500),
   
   enemyBullets: new Pool(() => ({
     active: false, x: 0, y: 0, vx: 0, vy: 0, dmg: 10, type: 'spark',
@@ -882,6 +882,10 @@ function fireLaser(x, y, aimX, aimY) {
   b.vx = Math.cos(a) * spd;
   b.vy = Math.sin(a) * spd;
   b.dmg = LASER_DAMAGE * game.player.damageMulti;
+  b._type = 'laser';
+  b._target = null;
+  b._homingStr = 0;
+  b._life = 0;
   SFX.playerLaser();
 }
 
@@ -1535,24 +1539,66 @@ function drawEnemies(ctx) {
         break;
       }
       case 'brain': {
-        // Brain blob with shimmer
+        // Robotron-style brain — pink/purple brain shape with visible folds
         const wobble = Math.sin(e.special.shimmerTimer * 4) * 2;
+        const t = e.special.shimmerTimer;
+        
+        // Brain body — rounded top, slightly flattened
+        ctx.fillStyle = e.special._flashTimer > 0 ? '#ffffff' : C.brain;
         ctx.beginPath();
-        ctx.ellipse(0, 0, s + wobble, s - wobble * 0.5, 0, 0, Math.PI * 2);
+        // Upper dome (two hemispheres)
+        ctx.ellipse(-s * 0.25, -s * 0.1 + wobble, s * 0.55, s * 0.7, -0.1, 0, Math.PI * 2);
         ctx.fill();
-        // Shimmer highlight
-        ctx.fillStyle = C.brainGlow;
-        ctx.globalAlpha = 0.3 + Math.sin(e.special.shimmerTimer * 6) * 0.3;
         ctx.beginPath();
-        ctx.ellipse(-s * 0.3, -s * 0.2, s * 0.3, s * 0.2, 0, 0, Math.PI * 2);
+        ctx.ellipse(s * 0.25, -s * 0.1 - wobble * 0.5, s * 0.55, s * 0.65, 0.1, 0, Math.PI * 2);
         ctx.fill();
-        // Wrinkle lines
-        ctx.strokeStyle = '#ffccff';
-        ctx.globalAlpha = 0.4;
-        ctx.lineWidth = 1;
+        // Lower stem/base
+        ctx.fillStyle = '#aa33aa';
         ctx.beginPath();
-        ctx.moveTo(-s * 0.4, 0); ctx.quadraticCurveTo(0, -s * 0.4, s * 0.4, 0);
+        ctx.ellipse(0, s * 0.4, s * 0.35, s * 0.25, 0, 0, Math.PI * 2);
+        ctx.fill();
+        // Center groove (divides the hemispheres)
+        ctx.strokeStyle = '#662266';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, -s * 0.8 + wobble);
+        ctx.quadraticCurveTo(wobble * 0.5, 0, 0, s * 0.3);
         ctx.stroke();
+        // Brain folds/wrinkles — the distinctive Robotron look
+        ctx.strokeStyle = '#dd88dd';
+        ctx.lineWidth = 1;
+        ctx.globalAlpha = 0.6;
+        // Left hemisphere folds
+        ctx.beginPath();
+        ctx.moveTo(-s * 0.6, -s * 0.2);
+        ctx.quadraticCurveTo(-s * 0.3, -s * 0.5, -s * 0.1, -s * 0.15);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-s * 0.5, s * 0.1);
+        ctx.quadraticCurveTo(-s * 0.2, -s * 0.1, -s * 0.1, s * 0.15);
+        ctx.stroke();
+        // Right hemisphere folds
+        ctx.beginPath();
+        ctx.moveTo(s * 0.6, -s * 0.15);
+        ctx.quadraticCurveTo(s * 0.3, -s * 0.45, s * 0.1, -s * 0.1);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(s * 0.5, s * 0.15);
+        ctx.quadraticCurveTo(s * 0.2, -s * 0.05, s * 0.1, s * 0.2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+        // Shimmer highlight (sweeping white gleam)
+        ctx.fillStyle = '#ffccff';
+        ctx.globalAlpha = 0.2 + Math.sin(t * 6) * 0.2;
+        const shimX = Math.sin(t * 3) * s * 0.3;
+        ctx.beginPath();
+        ctx.ellipse(shimX, -s * 0.2, s * 0.2, s * 0.15, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // Small evil eyes at the base
+        ctx.fillStyle = '#ff0044';
+        ctx.fillRect(-s * 0.2, s * 0.25, s * 0.12, s * 0.08);
+        ctx.fillRect(s * 0.08, s * 0.25, s * 0.12, s * 0.08);
         break;
       }
       case 'prog': {
@@ -1896,25 +1942,32 @@ function updateProjectiles(dt) {
 }
 
 function drawProjectiles(ctx) {
-  // Player bullets
+  // Player LASER bullets only (missiles/spread drawn by drawWeapons)
   game.playerBullets.forEach(b => {
-    // Afterimage trail
+    if (b._type !== 'laser') return; // Skip non-laser bullets
+    
+    // Bright afterimage trail
     ctx.strokeStyle = C.laserGlow;
-    ctx.globalAlpha = 0.4;
-    ctx.lineWidth = LASER_WIDTH;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = LASER_WIDTH + 1;
     ctx.beginPath();
     ctx.moveTo(b.prevX, b.prevY);
     ctx.lineTo(b.x, b.y);
     ctx.stroke();
     ctx.globalAlpha = 1;
     
-    // Bolt
-    ctx.fillStyle = C.laser;
+    // Bright bolt
+    ctx.fillStyle = '#ffffff';
     const a = Math.atan2(b.vy, b.vx);
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.rotate(a);
-    ctx.fillRect(-LASER_LENGTH / 2, -LASER_WIDTH / 2, LASER_LENGTH, LASER_WIDTH);
+    ctx.fillRect(-LASER_LENGTH, -LASER_WIDTH / 2, LASER_LENGTH * 2, LASER_WIDTH);
+    // Glow core
+    ctx.fillStyle = C.laserGlow;
+    ctx.globalAlpha = 0.6;
+    ctx.fillRect(-LASER_LENGTH * 1.5, -LASER_WIDTH, LASER_LENGTH * 3, LASER_WIDTH * 2);
+    ctx.globalAlpha = 1;
     ctx.restore();
   });
   
@@ -2829,12 +2882,16 @@ function updateStompy(dt) {
 // 18. WAVE SYSTEM
 // ============================================================================
 
+// Humans persist across 5-wave cycles. Fresh batch every 5 waves.
 function startNextWave() {
   game.wave++;
   game.player.rescueCount = 0;
+  game.waveHumansLost = 0;
   
   const w = game.wave;
   const isBrainWave = w % 5 === 0;
+  const cycleWave = ((w - 1) % 5) + 1; // 1,2,3,4,5,1,2,3,4,5...
+  const isNewCycle = cycleWave === 1; // Fresh humans on wave 1,6,11,16...
   
   // Clear non-Hulk enemies from previous wave
   for (let i = game.enemies.length - 1; i >= 0; i--) {
@@ -2846,11 +2903,11 @@ function startNextWave() {
   const electrodes = 5 + w * 2;
   for (let i = 0; i < electrodes; i++) spawnEnemyRandom('electrode');
   
-  // Hulks: persistent across waves, add more each wave
+  // Hulks: persistent, add more each wave
   const newHulks = w >= 2 ? Math.min(Math.floor(w * 0.5), 4) : 0;
   if (!isBrainWave) { for (let i = 0; i < newHulks; i++) spawnEnemyRandom('hulk'); }
   
-  // Brains on brain waves
+  // Brains on brain waves (every 5th)
   if (isBrainWave) {
     const brainCount = 3 + Math.floor(w / 2);
     for (let i = 0; i < brainCount; i++) spawnEnemyAtEdge('brain');
@@ -2862,20 +2919,41 @@ function startNextWave() {
   if (w >= 3) { for (let i = 0; i < Math.min(w - 2, 3); i++) spawnEnemyAtEdge('spheroid'); }
   if (w >= 4) { for (let i = 0; i < Math.min(w - 3, 2); i++) spawnEnemyAtEdge('quark'); }
   
-  // Spawn humans — this is what drives the wave
-  const humanCount = 10 + w * 3;
-  spawnHumans(humanCount);
+  // ---- HUMAN CYCLE SYSTEM ----
+  // Fresh batch of humans every 5 waves. Survivors carry over between waves within the cycle.
+  // Any humans killed in wave 1 are NOT replaced in waves 2-5.
+  // This creates escalating tension within each 5-wave cycle.
+  if (isNewCycle) {
+    // Clear any leftover humans from previous cycle
+    game.humans = [];
+    // Fresh batch scales with difficulty
+    const cycleNum = Math.floor((w - 1) / 5) + 1; // 1st cycle, 2nd cycle, etc.
+    const humanCount = Math.max(8, 20 + cycleNum * 3);
+    spawnHumans(humanCount);
+  }
+  // If not a new cycle, humans carry over from the previous wave — no new spawns!
+  // The remaining humans from the previous wave are still on the map.
   
-  // Set continuous spawn rate (enemies keep coming until humans are resolved)
+  // Track for this wave
+  game.waveHumansStart = game.humans.length;
+  
+  // Set continuous spawn rate
   game.waveSpawnTimer = 0;
-  game.waveSpawnRate = Math.max(0.8, 3.0 - w * 0.15); // seconds between spawn bursts
-  game.waveSpawnCount = Math.min(3 + Math.floor(w * 0.5), 8); // enemies per burst
+  game.waveSpawnRate = Math.max(0.8, 3.0 - w * 0.15);
+  game.waveSpawnCount = Math.min(3 + Math.floor(w * 0.5), 8);
   
-  // Announce with transition
+  // Announce
   game.waveAnnounce = 2.5;
   game.betweenWaves = false;
   
   SFX.waveTransition();
+  
+  // Show cycle info
+  if (isNewCycle && w > 1) {
+    spawnFloatingText(game.player.x, game.player.y - 60, 'NEW SURVIVORS ARRIVED!', '#44ff44', 14);
+  } else if (!isNewCycle) {
+    spawnFloatingText(game.player.x, game.player.y - 60, `${game.humans.length} SURVIVORS REMAIN`, game.humans.length <= 5 ? '#ff4444' : '#ffcc00', 11);
+  }
 }
 
 function updateWaveSystem(dt) {
@@ -3082,15 +3160,21 @@ function drawHUD(ctx) {
   ctx.fillStyle = C.textWhite;
   ctx.fillText(`WAVE ${game.wave}`, w - 16, 30);
   
-  // Human count — under wave, top right (critical info: if this hits 0, game over)
+  // Human count — under wave, top right
   const humansAlive = game.humans.length;
+  const cycleWave = ((game.wave - 1) % 5) + 1;
   ctx.font = "9px 'Press Start 2P', monospace";
   ctx.fillStyle = humansAlive <= 3 ? '#ff4444' : humansAlive <= 8 ? '#ffcc00' : '#44ff44';
-  ctx.fillText(`HUMANS: ${humansAlive}`, w - 16, 46);
+  ctx.fillText(`SURVIVORS: ${humansAlive}`, w - 16, 46);
+  // Cycle indicator
+  ctx.fillStyle = '#888888';
+  ctx.font = "7px 'Press Start 2P', monospace";
+  ctx.fillText(`CYCLE ${cycleWave}/5`, w - 16, 60);
   // Flash warning when low
   if (humansAlive <= 3 && humansAlive > 0 && Math.floor(game.time * 3) % 2 === 0) {
     ctx.fillStyle = '#ff0000';
-    ctx.fillText('!! SAVE THEM !!', w - 16, 60);
+    ctx.font = "9px 'Press Start 2P', monospace";
+    ctx.fillText('!! SAVE THEM !!', w - 16, 74);
   }
   
   // HP bar — bottom left
@@ -3162,45 +3246,43 @@ function drawHUD(ctx) {
     ctx.globalAlpha = 1;
   }
   
-  // ---- HUMAN DIRECTION ARROWS around player ----
-  // Subtle arrows pointing toward nearest off-screen humans
+  // ---- HUMAN DIRECTION ARROWS anchored around the player ----
   if (game.humans.length > 0 && game.player.alive) {
-    const cx = game.width / 2;
-    const cy = game.height / 2;
-    const arrowDist = 60; // distance from center of screen
-    const shown = new Set();
-    // Sort by distance, show up to 5 nearest
+    // Player screen position (accounts for camera offset and zoom)
+    const psx = (game.player.x - game.camX) * game.camZoom;
+    const psy = (game.player.y - game.camY) * game.camZoom;
+    const arrowDist = 80; // distance from player on screen
+    
     const sorted = game.humans
       .map(h => ({ h, d: dist(game.player.x, game.player.y, h.x, h.y) }))
       .sort((a, b) => a.d - b.d)
       .slice(0, 5);
     for (const { h, d: hd } of sorted) {
-      // Only show arrows for humans off-screen or far away
-      if (hd < 150) continue;
+      if (hd < 100) continue; // skip nearby humans (already visible)
       const a = angle(game.player.x, game.player.y, h.x, h.y);
-      const ax = cx + Math.cos(a) * arrowDist;
-      const ay = cy + Math.sin(a) * arrowDist;
-      // Arrow opacity based on distance (closer = more visible)
-      const alpha = clamp(1 - hd / 1200, 0.2, 0.7);
+      const ax = psx + Math.cos(a) * arrowDist;
+      const ay = psy + Math.sin(a) * arrowDist;
+      const alpha = clamp(1 - hd / 800, 0.3, 0.85);
+      
       ctx.save();
       ctx.translate(ax, ay);
       ctx.rotate(a);
       ctx.globalAlpha = alpha;
-      // Arrow triangle
+      // Arrow — larger, more visible
       ctx.fillStyle = '#44ff44';
       ctx.beginPath();
-      ctx.moveTo(10, 0);
-      ctx.lineTo(-5, -6);
-      ctx.lineTo(-5, 6);
+      ctx.moveTo(14, 0);
+      ctx.lineTo(-6, -8);
+      ctx.lineTo(-3, 0);
+      ctx.lineTo(-6, 8);
       ctx.closePath();
       ctx.fill();
-      // Distance indicator
-      ctx.globalAlpha = alpha * 0.6;
-      ctx.fillStyle = '#44ff44';
-      ctx.rotate(-a); // un-rotate for text
-      ctx.font = "6px 'Press Start 2P', monospace";
-      ctx.textAlign = 'center';
-      ctx.fillText(Math.floor(hd / 10) + '', 0, -10);
+      // Pulsing glow
+      ctx.globalAlpha = alpha * 0.3 * (0.5 + Math.sin(game.time * 4) * 0.5);
+      ctx.fillStyle = '#88ff88';
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.fill();
       ctx.restore();
     }
     ctx.globalAlpha = 1;
