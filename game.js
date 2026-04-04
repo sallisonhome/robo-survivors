@@ -3334,8 +3334,8 @@ function startNextWave() {
   if (isNewCycle) {
     // Fresh batch
     game.humans = [];
-    game.cycleSurvivorCount = Math.max(8, 20 + Math.floor((w - 1) / 5) * 3);
-    spawnHumans(game.cycleSurvivorCount);
+    game.cycleSurvivorCount = 20; // Fixed 20 survivors per 5-wave cycle — never increases
+    spawnHumans(20);
     game.cycleSurvivorCount = game.humans.length; // actual spawned (may be less due to position conflicts)
   } else {
     // Carry-over: the survivors from last wave = cycleSurvivorCount - total killed across this cycle
