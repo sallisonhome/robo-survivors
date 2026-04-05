@@ -355,7 +355,59 @@ const Touch = {
       }
     } catch (e) { /* not supported */ }
     
+    // Set up orientation checking for portrait/landscape overlay
+    // Multiple listeners for cross-platform reliability:
+    // - resize: works everywhere, catches most rotations
+    // - orientationchange: legacy iOS/Android event
+    // - screen.orientation.change: modern Android/Chrome API
+    this._checkOrientation();
+    window.addEventListener('resize', () => this._checkOrientation());
+    window.addEventListener('orientationchange', () => {
+      // iOS needs a delay after orientationchange to get correct dimensions
+      setTimeout(() => this._checkOrientation(), 100);
+      setTimeout(() => this._checkOrientation(), 300);
+      setTimeout(() => this._checkOrientation(), 600);
+    });
+    if (screen.orientation) {
+      screen.orientation.addEventListener('change', () => {
+        this._checkOrientation();
+        setTimeout(() => this._checkOrientation(), 200);
+      });
+    }
+    // Polling fallback — catches any edge case iOS/Android rotation delays
+    setInterval(() => this._checkOrientation(), 1000);
+    
     this.resize();
+  },
+  
+  _wasPortrait: true,
+  
+  _checkOrientation() {
+    const overlay = document.getElementById('rotateOverlay');
+    const canvas = document.getElementById('gameCanvas');
+    if (!overlay || !canvas) return;
+    // Use window dimensions — most reliable across all browsers/OS
+    const isPortrait = window.innerHeight > window.innerWidth;
+    if (isPortrait) {
+      overlay.style.display = 'flex';
+      canvas.style.display = 'none';
+      this._wasPortrait = true;
+    } else {
+      overlay.style.display = 'none';
+      canvas.style.display = 'block';
+      // If transitioning from portrait to landscape, force a canvas resize
+      if (this._wasPortrait) {
+        this._wasPortrait = false;
+        // Trigger resize so canvas gets correct landscape dimensions
+        if (game.canvas) {
+          game.canvas.width = window.innerWidth;
+          game.canvas.height = window.innerHeight;
+          game.width = game.canvas.width;
+          game.height = game.canvas.height;
+        }
+        this.resize();
+      }
+    }
   },
   
   resize() {

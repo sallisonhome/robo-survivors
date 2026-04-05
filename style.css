@@ -69,12 +69,4 @@ canvas {
   75% { transform: rotate(0deg); }
 }
 
-/* Show overlay ONLY on touch devices in portrait */
-@media (pointer: coarse) and (orientation: portrait) {
-  #rotateOverlay {
-    display: flex;
-  }
-  canvas {
-    display: none;
-  }
-}
+/* Rotate overlay is controlled by JS for reliability on iOS */
