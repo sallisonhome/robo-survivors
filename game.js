@@ -3804,11 +3804,12 @@ game.smartBombFlash = 0; // visual flash timer
 game.smartBombNextAward = 5; // next wave to award bombs
 game.smartBombBonusThreshold = 500000; // next score threshold for bonus bomb
 game.smartBombScoreBonuses = 0; // cumulative bombs earned from score thresholds
+const MAX_SMART_BOMBS = 5; // hard cap on inventory
 
 function awardSmartBombs() {
-  // Award base 2 + all cumulative score-earned bombs every 5-wave cycle reset
+  // Award base 2 + all cumulative score-earned bombs every 5-wave cycle reset, capped at max
   const totalAward = 2 + game.smartBombScoreBonuses;
-  game.smartBombs = totalAward;
+  game.smartBombs = Math.min(totalAward, MAX_SMART_BOMBS);
 }
 
 function triggerSmartBomb() {
@@ -4035,9 +4036,7 @@ function startNextWave() {
   if (w % 5 === 1 || w === 1) {
     awardSmartBombs();
     if (w > 1) {
-      const bombMsg = game.smartBombScoreBonuses > 0 
-        ? `SMART BOMBS: ${game.smartBombs} (2+${game.smartBombScoreBonuses} BONUS)`
-        : `+2 SMART BOMBS!`;
+      const bombMsg = `SMART BOMBS: ${game.smartBombs}/${MAX_SMART_BOMBS}`;
       spawnFloatingText(game.player.x, game.player.y - 80, bombMsg, '#ffcc00', 12);
       if (!playSample('smartbomb_award', 1.0)) SFX.levelUp();
     }
@@ -5995,13 +5994,18 @@ function init() {
           
           // Smart bomb bonus: +1 bomb per 500,000 points (cumulative across wave resets)
           if (game.player.score >= game.smartBombBonusThreshold) {
-            game.smartBombs++;
             game.smartBombScoreBonuses++; // track cumulative bonus for wave resets
             game.smartBombBonusThreshold += 500000;
-            // BIG on-screen notification the player can't miss
-            spawnFloatingText(game.player.x, game.player.y - 60, 'ADDITIONAL SMART BOMB ACQUIRED', '#ffcc00', 16);
-            spawnFloatingText(game.player.x, game.player.y - 35, `${(game.smartBombBonusThreshold - 500000).toLocaleString()} POINTS!`, '#ffffff', 11);
-            spawnFloatingText(game.player.x, game.player.y - 15, `BOMBS: ${game.smartBombs}`, '#ffcc00', 12);
+            if (game.smartBombs < MAX_SMART_BOMBS) {
+              game.smartBombs++;
+              // BIG on-screen notification the player can't miss
+              spawnFloatingText(game.player.x, game.player.y - 60, 'ADDITIONAL SMART BOMB ACQUIRED', '#ffcc00', 16);
+              spawnFloatingText(game.player.x, game.player.y - 35, `${(game.smartBombBonusThreshold - 500000).toLocaleString()} POINTS!`, '#ffffff', 11);
+              spawnFloatingText(game.player.x, game.player.y - 15, `BOMBS: ${game.smartBombs}/${MAX_SMART_BOMBS}`, '#ffcc00', 12);
+            } else {
+              spawnFloatingText(game.player.x, game.player.y - 60, 'SMART BOMBS FULL', '#ff6600', 14);
+              spawnFloatingText(game.player.x, game.player.y - 35, `${(game.smartBombBonusThreshold - 500000).toLocaleString()} POINTS!`, '#ffffff', 11);
+            }
             // Play the Defender WAV award sound
             if (!playSample('smartbomb_award', 1.0)) SFX.levelUp();
             // Screen flash gold + shake
