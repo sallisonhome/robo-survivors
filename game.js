@@ -1027,6 +1027,9 @@ function damagePlayer(amount) {
 }
 
 function triggerGameEnd() {
+  // Start the single shared 20-second countdown
+  game.attractReturnTimer = 20;
+  
   // Check if score qualifies for any leaderboard
   const qualifies = checkScoreQualifies(game.player.score);
   if (qualifies) {
@@ -1034,7 +1037,6 @@ function triggerGameEnd() {
   } else {
     if (game.player.score > game.sessionHigh) game.sessionHigh = game.player.score;
     game.state = 'gameover';
-    game.attractReturnTimer = 30; // return to attract after 30s idle
   }
 }
 
@@ -4653,12 +4655,32 @@ function drawGameOver(ctx) {
     ctx.fillText('NEW HIGH SCORE!', w / 2, h * 0.72);
   }
   
-  // Restart prompt
-  const pressAlpha = 0.3 + Math.sin(game.time * Math.PI) * 0.7;
+  // ---- ARCADE COUNTDOWN TIMER ----
+  const countdown = Math.max(0, Math.ceil(game.attractReturnTimer));
+  
+  // Large countdown number
+  ctx.fillStyle = countdown <= 5 ? '#ff4444' : countdown <= 10 ? '#ffcc00' : '#00e5ff';
+  ctx.font = `bold ${countdown <= 5 ? 48 : 36}px 'Press Start 2P', monospace`;
+  ctx.globalAlpha = countdown <= 3 ? (0.5 + Math.sin(game.time * 8) * 0.5) : 0.9;
+  ctx.fillText(countdown.toString(), w / 2, h * 0.78);
+  ctx.globalAlpha = 1;
+  
+  // "CONTINUE?" text above countdown
+  ctx.fillStyle = '#ffffff';
+  ctx.font = "10px 'Press Start 2P', monospace";
+  ctx.globalAlpha = 0.6;
+  ctx.fillText('CONTINUE?', w / 2, h * 0.71);
+  ctx.globalAlpha = 1;
+  
+  // Action prompts
+  ctx.font = "9px 'Press Start 2P', monospace";
+  const pressAlpha = 0.5 + Math.sin(game.time * Math.PI * 2) * 0.5;
   ctx.globalAlpha = pressAlpha;
-  ctx.fillStyle = C.textWhite;
-  ctx.font = "12px 'Press Start 2P', monospace";
-  ctx.fillText(Input.gamepad ? 'PRESS START TO PLAY AGAIN' : 'PRESS ENTER TO PLAY AGAIN', w / 2, h * 0.85);
+  ctx.fillStyle = '#44ff44';
+  ctx.fillText(Input.gamepad ? 'PRESS START TO PLAY AGAIN' : 'PRESS ENTER TO PLAY AGAIN', w / 2, h * 0.87);
+  ctx.globalAlpha = 0.6;
+  ctx.fillStyle = '#888888';
+  ctx.fillText(Input.gamepad ? 'SELECT B FOR MAIN MENU' : 'PRESS ESC FOR MAIN MENU', w / 2, h * 0.92);
   ctx.globalAlpha = 1;
 }
 
@@ -4872,16 +4894,26 @@ function startHighScoreEntry() {
   hsEntry.slots = [0, 0, 0]; // default to 'A','A','A'
   hsEntry.currentSlot = 0;
   hsEntry.holdTimer = 0;
-  hsEntry.timeoutTimer = 30;
+  // Uses game.attractReturnTimer (shared 20s countdown set by triggerGameEnd)
   game.state = 'highscore_entry';
   SFX.levelUp(); // celebration sound
 }
 
 function updateHighScoreEntry(dt) {
-  hsEntry.timeoutTimer -= dt;
-  if (hsEntry.timeoutTimer <= 0) {
+  // Shared countdown timer (same one shown on game over)
+  game.attractReturnTimer -= dt;
+  if (game.attractReturnTimer <= 0) {
     submitHighScore();
     return;
+  }
+  
+  // Tick sound at each second for last 10 seconds
+  if (game.attractReturnTimer <= 10 && game.attractReturnTimer > 0) {
+    const sec = Math.ceil(game.attractReturnTimer);
+    const prevSec = Math.ceil(game.attractReturnTimer + dt);
+    if (sec !== prevSec) {
+      playTone(sec <= 3 ? 600 : 400, 0.04, 'square', 0.15, sec <= 3 ? 300 : 200);
+    }
   }
   
   // Navigate letters
@@ -4981,6 +5013,9 @@ function submitHighScore() {
   
   hsEntry.active = false;
   game.state = 'gameover';
+  // Timer carries over from high score entry — no reset
+  // If player was fast, they get remaining time on game over screen
+  // If timer already hit 0, gameover will immediately transition to attract
   SFX.menuConfirm();
 }
 
@@ -5069,10 +5104,16 @@ function drawHighScoreEntry(ctx) {
     ctx.fillText('OR TYPE A LETTER KEY DIRECTLY', w / 2, h * 0.75 + 16);
   }
   
-  // Timeout
-  ctx.fillStyle = '#444444';
-  ctx.font = "7px 'Press Start 2P', monospace";
-  ctx.fillText(`AUTO-SUBMIT IN ${Math.ceil(hsEntry.timeoutTimer)}s`, w / 2, h * 0.88);
+  // Arcade countdown timer (shared with game over)
+  const hsCountdown = Math.max(0, Math.ceil(game.attractReturnTimer));
+  ctx.fillStyle = hsCountdown <= 5 ? '#ff4444' : hsCountdown <= 10 ? '#ffcc00' : '#00e5ff';
+  ctx.font = `bold ${hsCountdown <= 5 ? 32 : 24}px 'Press Start 2P', monospace`;
+  ctx.globalAlpha = hsCountdown <= 3 ? (0.5 + Math.sin(game.time * 8) * 0.5) : 0.8;
+  ctx.fillText(hsCountdown.toString(), w / 2, h * 0.86);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = '#666666';
+  ctx.font = "6px 'Press Start 2P', monospace";
+  ctx.fillText('TIME REMAINING', w / 2, h * 0.9);
 }
 
 // ============================================================================
@@ -5287,11 +5328,27 @@ function init() {
           game.attractTimer += dt;
           game.attractReturnTimer -= dt;
           if (Input.startPressed()) { startGame(); break; }
-          // Return to attract mode after 30s idle on gameover
+          // B button or Escape to return to main menu
+          if (Input.backPressed()) {
+            game.state = 'title';
+            game.attractPhase = 0;
+            game.attractTimer = 0;
+            game.titleMenuSelection = 0;
+            break;
+          }
+          // 20 second arcade countdown to attract mode
           if (game.attractReturnTimer <= 0) {
             game.state = 'title';
             game.attractPhase = 0;
             game.attractTimer = 0;
+          }
+          // Tick sound at each second for last 10 seconds
+          if (game.attractReturnTimer <= 10 && game.attractReturnTimer > 0) {
+            const sec = Math.ceil(game.attractReturnTimer);
+            const prevSec = Math.ceil(game.attractReturnTimer + dt);
+            if (sec !== prevSec) {
+              playTone(sec <= 3 ? 600 : 400, 0.04, 'square', 0.15, sec <= 3 ? 300 : 200);
+            }
           }
           break;
       }
