@@ -307,6 +307,64 @@ const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/
   (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent)) || // iPadOS spoofs Mac
   (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches);
 
+// ---- LANDSCAPE ENFORCEMENT (runs immediately on mobile) ----
+// Must be outside Touch.init() so it works even before game starts
+(function() {
+  if (!isMobile) return;
+  
+  let wasPortrait = true;
+  
+  function checkOrientation() {
+    const overlay = document.getElementById('rotateOverlay');
+    const canvas = document.getElementById('gameCanvas');
+    if (!overlay || !canvas) return;
+    
+    const isPortrait = window.innerHeight > window.innerWidth;
+    if (isPortrait) {
+      overlay.style.display = 'flex';
+      canvas.style.display = 'none';
+      wasPortrait = true;
+    } else {
+      overlay.style.display = 'none';
+      canvas.style.display = 'block';
+      if (wasPortrait) {
+        wasPortrait = false;
+        // Force canvas resize when transitioning to landscape
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+        if (typeof game !== 'undefined') {
+          game.width = canvas.width;
+          game.height = canvas.height;
+        }
+      }
+    }
+  }
+  
+  // Run on DOM ready and on every possible orientation signal
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', checkOrientation);
+  } else {
+    checkOrientation();
+  }
+  
+  window.addEventListener('resize', checkOrientation);
+  window.addEventListener('orientationchange', function() {
+    setTimeout(checkOrientation, 50);
+    setTimeout(checkOrientation, 150);
+    setTimeout(checkOrientation, 300);
+    setTimeout(checkOrientation, 500);
+    setTimeout(checkOrientation, 1000);
+  });
+  if (screen.orientation) {
+    screen.orientation.addEventListener('change', function() {
+      checkOrientation();
+      setTimeout(checkOrientation, 200);
+    });
+  }
+  // Polling fallback every 500ms
+  setInterval(checkOrientation, 500);
+})();
+
 const Touch = {
   active: false,
   // Virtual stick state
@@ -355,59 +413,7 @@ const Touch = {
       }
     } catch (e) { /* not supported */ }
     
-    // Set up orientation checking for portrait/landscape overlay
-    // Multiple listeners for cross-platform reliability:
-    // - resize: works everywhere, catches most rotations
-    // - orientationchange: legacy iOS/Android event
-    // - screen.orientation.change: modern Android/Chrome API
-    this._checkOrientation();
-    window.addEventListener('resize', () => this._checkOrientation());
-    window.addEventListener('orientationchange', () => {
-      // iOS needs a delay after orientationchange to get correct dimensions
-      setTimeout(() => this._checkOrientation(), 100);
-      setTimeout(() => this._checkOrientation(), 300);
-      setTimeout(() => this._checkOrientation(), 600);
-    });
-    if (screen.orientation) {
-      screen.orientation.addEventListener('change', () => {
-        this._checkOrientation();
-        setTimeout(() => this._checkOrientation(), 200);
-      });
-    }
-    // Polling fallback — catches any edge case iOS/Android rotation delays
-    setInterval(() => this._checkOrientation(), 1000);
-    
     this.resize();
-  },
-  
-  _wasPortrait: true,
-  
-  _checkOrientation() {
-    const overlay = document.getElementById('rotateOverlay');
-    const canvas = document.getElementById('gameCanvas');
-    if (!overlay || !canvas) return;
-    // Use window dimensions — most reliable across all browsers/OS
-    const isPortrait = window.innerHeight > window.innerWidth;
-    if (isPortrait) {
-      overlay.style.display = 'flex';
-      canvas.style.display = 'none';
-      this._wasPortrait = true;
-    } else {
-      overlay.style.display = 'none';
-      canvas.style.display = 'block';
-      // If transitioning from portrait to landscape, force a canvas resize
-      if (this._wasPortrait) {
-        this._wasPortrait = false;
-        // Trigger resize so canvas gets correct landscape dimensions
-        if (game.canvas) {
-          game.canvas.width = window.innerWidth;
-          game.canvas.height = window.innerHeight;
-          game.width = game.canvas.width;
-          game.height = game.canvas.height;
-        }
-        this.resize();
-      }
-    }
   },
   
   resize() {
