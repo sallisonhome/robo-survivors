@@ -708,6 +708,7 @@ function playSample(name, volume) {
   return true;
 }
 
+let _audioWarmedUp = false;
 function resumeAudio() {
   // If audio context doesn't exist yet, create it now (on user gesture)
   if (!audioCtx) {
@@ -715,6 +716,15 @@ function resumeAudio() {
   }
   if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume().catch(() => {});
+  }
+  // Play a silent buffer to fully unlock the audio pipeline on iOS/Android
+  if (audioCtx && !_audioWarmedUp) {
+    _audioWarmedUp = true;
+    const silentBuf = audioCtx.createBuffer(1, 1, 22050);
+    const src = audioCtx.createBufferSource();
+    src.buffer = silentBuf;
+    src.connect(audioCtx.destination);
+    src.start();
   }
 }
 
@@ -5594,6 +5604,53 @@ function updateHighScoreEntry(dt) {
   
   // Navigate letters
   let moved = false;
+  
+  // Touch: tap on up/down arrows or slot areas
+  if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+    const w = game.width;
+    const h = game.height;
+    const slotW = isMobile ? 70 : 50;
+    const slotGap = isMobile ? 15 : 20;
+    const totalSlotW = slotW * 3 + slotGap * 2;
+    const startX = (w - totalSlotW) / 2;
+    const slotY = h * 0.52;
+    const arrowH = isMobile ? 60 : 30; // big touch target for arrows
+    
+    for (let i = 0; i < 3; i++) {
+      const sx = startX + i * (slotW + slotGap);
+      // Tap on up arrow area (above slot)
+      if (Touch.consumeTap(sx - 10, slotY - arrowH - 15, slotW + 20, arrowH)) {
+        hsEntry.currentSlot = i;
+        hsEntry.slots[i] = (hsEntry.slots[i] + 1) % INITIALS_CHARS.length;
+        moved = true;
+        break;
+      }
+      // Tap on down arrow area (below slot)
+      if (Touch.consumeTap(sx - 10, slotY + 45, slotW + 20, arrowH)) {
+        hsEntry.currentSlot = i;
+        hsEntry.slots[i] = (hsEntry.slots[i] - 1 + INITIALS_CHARS.length) % INITIALS_CHARS.length;
+        moved = true;
+        break;
+      }
+      // Tap on the slot itself to select it
+      if (Touch.consumeTap(sx - 10, slotY - 5, slotW + 20, 50)) {
+        hsEntry.currentSlot = i;
+        break;
+      }
+    }
+    
+    // Tap on DONE button area
+    if (!Touch.tapConsumed && Touch.consumeTap(w / 2 - 80, h * 0.82 - 15, 160, 40)) {
+      if (hsEntry.currentSlot < 2) {
+        hsEntry.currentSlot++;
+        SFX.menuConfirm();
+      } else {
+        submitHighScore();
+        return;
+      }
+    }
+  }
+  
   // D-pad, left stick, or arrow keys to cycle letters
   if (Input.menuUp()) {
     hsEntry.slots[hsEntry.currentSlot] = (hsEntry.slots[hsEntry.currentSlot] + 1) % INITIALS_CHARS.length;
@@ -5773,17 +5830,24 @@ function drawHighScoreEntry(ctx) {
   ctx.font = "12px 'Press Start 2P', monospace";
   ctx.fillText('ENTER YOUR INITIALS', w / 2, h * 0.42);
   
-  // The 3 slots
-  const slotW = 50;
-  const slotGap = 20;
+  // The 3 slots — bigger on mobile for touch
+  const slotW = isMobile ? 70 : 50;
+  const slotGap = isMobile ? 15 : 20;
   const totalW = slotW * 3 + slotGap * 2;
   const startX = (w - totalW) / 2;
   const slotY = h * 0.52;
+  const arrowSize = isMobile ? 20 : 10;
   
   for (let i = 0; i < 3; i++) {
     const sx = startX + i * (slotW + slotGap);
     const isActive = i === hsEntry.currentSlot;
     const char = INITIALS_CHARS[hsEntry.slots[i]];
+    
+    // Up arrow (touch target visible on mobile)
+    ctx.fillStyle = isActive ? C.textCyan : '#555555';
+    ctx.font = `${arrowSize}px 'Press Start 2P', monospace`;
+    const arrowBob = isActive ? Math.sin(game.time * 6) * 3 : 0;
+    ctx.fillText('▲', sx + slotW / 2, slotY - 15 + arrowBob);
     
     // Slot background
     ctx.fillStyle = isActive ? 'rgba(0,229,255,0.2)' : 'rgba(255,255,255,0.05)';
@@ -5797,14 +5861,10 @@ function drawHighScoreEntry(ctx) {
     ctx.font = "bold 28px 'Press Start 2P', monospace";
     ctx.fillText(char, sx + slotW / 2, slotY + 33);
     
-    // Up/down arrows on active slot
-    if (isActive) {
-      ctx.fillStyle = C.textCyan;
-      ctx.font = "10px 'Press Start 2P', monospace";
-      const arrowBob = Math.sin(game.time * 6) * 3;
-      ctx.fillText('▲', sx + slotW / 2, slotY - 12 + arrowBob);
-      ctx.fillText('▼', sx + slotW / 2, slotY + 60 - arrowBob);
-    }
+    // Down arrow
+    ctx.fillStyle = isActive ? C.textCyan : '#555555';
+    ctx.font = `${arrowSize}px 'Press Start 2P', monospace`;
+    ctx.fillText('▼', sx + slotW / 2, slotY + 65 - arrowBob);
   }
   
   // Underline for active slot
@@ -5814,10 +5874,26 @@ function drawHighScoreEntry(ctx) {
   ctx.fillRect(activeX + 5, slotY + 42, slotW - 10, 3);
   ctx.globalAlpha = 1;
   
+  // DONE / NEXT button for touch
+  if (Touch.active) {
+    const btnLabel = hsEntry.currentSlot < 2 ? 'NEXT ▶' : 'DONE ✓';
+    const btnColor = hsEntry.currentSlot < 2 ? C.textCyan : '#44ff44';
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.fillRect(w / 2 - 80, h * 0.82 - 15, 160, 40);
+    ctx.strokeStyle = btnColor;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(w / 2 - 80, h * 0.82 - 15, 160, 40);
+    ctx.fillStyle = btnColor;
+    ctx.font = "bold 14px 'Press Start 2P', monospace";
+    ctx.fillText(btnLabel, w / 2, h * 0.82 + 12);
+  }
+  
   // Controls hint
   ctx.fillStyle = '#666666';
   ctx.font = "7px 'Press Start 2P', monospace";
-  if (Input.gamepad) {
+  if (Touch.active) {
+    ctx.fillText('TAP ARROWS TO CHANGE LETTER', w / 2, h * 0.92);
+  } else if (Input.gamepad) {
     ctx.fillText('D-PAD: CHANGE LETTER     A: CONFIRM     B: BACK', w / 2, h * 0.75);
   } else {
     ctx.fillText('UP/DOWN: CHANGE     ENTER: CONFIRM     BACKSPACE: BACK', w / 2, h * 0.75);
