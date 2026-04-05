@@ -1379,7 +1379,7 @@ function fireLaser(x, y, aimX, aimY) {
 
 function damagePlayer(amount) {
   const p = game.player;
-  if (p.iframes > 0 || !p.alive) return;
+  if (p.iframes > 0 || !p.alive || stompyActive) return; // Stompy = full invulnerability
   const dmg = Math.max(1, amount - p.armorFlat);
   p.hp -= dmg;
   p.iframes = PLAYER_IFRAMES;
@@ -3668,12 +3668,12 @@ const stompyVoices = {
     if (typeof speechSynthesis === 'undefined') return;
     this._loadVoices();
     speechSynthesis.cancel(); // clear any pending
-    // Temporarily boost SFX gain for Stompy voices — 40% louder than everything else
-    if (sfxGain) sfxGain.gain.value = 1.4;
+    // Quieten all game SFX and blast Stompy voice at max
+    if (sfxGain) sfxGain.gain.value = 0.3; // duck game sounds way down
     const u = new SpeechSynthesisUtterance('Stompy Activated');
     u.rate = 1.1;  // slightly fast — confident
     u.pitch = 1.4; // higher pitch — female AI computer
-    u.volume = 1.0; // max volume
+    u.volume = 1.0; // max SpeechSynthesis volume
     if (this._femaleVoice) u.voice = this._femaleVoice;
     speechSynthesis.speak(u);
   },
@@ -3683,12 +3683,12 @@ const stompyVoices = {
     this._loadVoices();
     // Don't interrupt activation announcement
     if (speechSynthesis.speaking) return;
-    // Boost SFX gain for Stompy voices — 40% louder than everything else
-    if (sfxGain) sfxGain.gain.value = 1.4;
+    // Duck game sounds and blast Stompy callout at max
+    if (sfxGain) sfxGain.gain.value = 0.3; // duck game sounds way down
     const u = new SpeechSynthesisUtterance(text);
     u.rate = 0.8;  // slower — powerful, ominous
     u.pitch = 0.3; // very low pitch — deep robotic male
-    u.volume = 1.0; // max volume
+    u.volume = 1.0; // max SpeechSynthesis volume
     if (this._maleVoice) u.voice = this._maleVoice;
     speechSynthesis.speak(u);
   },
@@ -3711,6 +3711,8 @@ function activateStompy() {
   // Flash
   game.flashTimer = 0.3;
   game.flashColor = '#ffffff';
+  // Duck all game SFX so Stompy voices dominate
+  if (sfxGain) sfxGain.gain.value = 0.3;
   SFX.stompyTransform();
   // "Stompy Activated" — bold female AI voice
   stompyVoices.speakActivation();
@@ -3748,9 +3750,9 @@ function updateStompy(dt) {
       // Kill everything, even Hulks
       e.hp = 0;
       killEnemy(e, i);
-      // Satisfying screen shake on each Stompy kill
-      game.shakeTimer = Math.max(game.shakeTimer, 0.1);
-      game.shakeIntensity = Math.max(game.shakeIntensity, 3);
+      // BIG screen shake on each Stompy kill — must be very noticeable
+      game.shakeTimer = 0.25;
+      game.shakeIntensity = 8;
     }
   }
   
