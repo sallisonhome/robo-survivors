@@ -4,14 +4,12 @@
 html, body {
   width: 100%;
   height: 100%;
-  height: 100dvh; /* dynamic viewport height — excludes browser chrome */
-  overflow: hidden;
   margin: 0;
   padding: 0;
+  overflow: hidden;
   background: #000;
   font-family: 'Press Start 2P', monospace;
   -webkit-font-smoothing: antialiased;
-  /* Prevent mobile browser gestures */
   touch-action: none;
   overscroll-behavior: none;
   -webkit-touch-callout: none;
