@@ -15,7 +15,7 @@ const GRID_SIZE = 64;
 const TICK_RATE = 1000 / 60;
 const PLAYER_SPEED = 280;
 const PLAYER_SIZE = 14;
-const PLAYER_MAX_HP = 100;
+const PLAYER_MAX_HP = 50;
 const PLAYER_IFRAMES = 1.0; // seconds of invincibility after damage
 const LASER_SPEED = 800;
 const LASER_COOLDOWN = 0.08; // seconds between shots
@@ -1537,8 +1537,8 @@ function createEnemy(type, x, y) {
       break;
     case 'hulk':
       e.hp = 9999; e.maxHp = 9999;
-      // Hulk base speed 40, +2% cumulative per brain wave after the first
-      e.speed = 40 * (1 + 0.02 * Math.max(0, (game.brainWaveCount || 0) - 1));
+      // Hulk base speed 40, +5% cumulative per brain wave after the first
+      e.speed = 40 * (1 + 0.05 * Math.max(0, (game.brainWaveCount || 0) - 1));
       e.size = 28; e.color = C.hulk;
       e.points = 0; e.gemType = 'none';
       e.special.invincible = true;
@@ -3972,9 +3972,9 @@ function startNextWave() {
         b.speed *= 1 + 0.10 * (game.brainWaveCount - 1);
       }
     }
-    // Apply cumulative +2% speed increase to ALL hulks per brain wave after the first
+    // Apply cumulative +5% speed increase to ALL hulks per brain wave after the first
     if (game.brainWaveCount > 1) {
-      const hulkSpeedMulti = 1 + 0.02 * (game.brainWaveCount - 1);
+      const hulkSpeedMulti = 1 + 0.05 * (game.brainWaveCount - 1);
       for (const e of game.enemies) {
         if (e.active && e.type === 'hulk') {
           e.speed = 40 * hulkSpeedMulti;
