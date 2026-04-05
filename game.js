@@ -2707,6 +2707,7 @@ function updateWeapons(dt) {
         b.vx = Math.cos(a) * misSpd;
         b.vy = Math.sin(a) * misSpd;
         b.dmg = misDmg;
+        b.pierceLeft = 0; // missiles don't pierce
         b._type = 'missile'; // for rendering
         b._target = target;
         b._homingStr = 3.0 + misLv * 0.5;
@@ -2857,6 +2858,7 @@ function updateWeapons(dt) {
         b.vx = Math.cos(a) * spSpd;
         b.vy = Math.sin(a) * spSpd;
         b.dmg = spDmg;
+        b.pierceLeft = 0; // spread doesn't pierce
         b._type = 'spread';
       }
       SFX.spreadBlast();
