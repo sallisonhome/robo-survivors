@@ -172,6 +172,8 @@ const Input = {
   gpButtonsJust: new Array(17).fill(false),
   moveX: 0, moveY: 0,
   aimX: 0, aimY: 0,
+  // Mouse click for menus
+  mouseClickX: -1, mouseClickY: -1, mouseClicked: false,
   
   init() {
     document.addEventListener('keydown', e => {
@@ -183,6 +185,25 @@ const Input = {
     window.addEventListener('gamepadconnected', e => {
       console.log('Gamepad connected:', e.gamepad.id);
     });
+    // Mouse click for menu interaction
+    const canvas = document.getElementById('gameCanvas');
+    if (canvas) {
+      canvas.addEventListener('click', e => {
+        this.mouseClickX = e.clientX;
+        this.mouseClickY = e.clientY;
+        this.mouseClicked = true;
+      });
+    }
+  },
+  
+  consumeClick(x, y, w, h) {
+    if (!this.mouseClicked) return false;
+    if (this.mouseClickX >= x && this.mouseClickX <= x + w &&
+        this.mouseClickY >= y && this.mouseClickY <= y + h) {
+      this.mouseClicked = false;
+      return true;
+    }
+    return false;
   },
 
   update() {
@@ -282,7 +303,7 @@ const Input = {
   _stickFlickX: 0, _stickFlickY: 0,
   _stickCooldown: 0,
   
-  endFrame() { this.justPressed = {}; this._stickFlickX = 0; this._stickFlickY = 0; },
+  endFrame() { this.justPressed = {}; this._stickFlickX = 0; this._stickFlickY = 0; this.mouseClicked = false; this.mouseClickX = -1; this.mouseClickY = -1; },
   isDown(code) { return !!this.keys[code]; },
   wasPressed(code) { return !!this.justPressed[code]; },
   gpJust(index) { return this.gpButtonsJust[index]; },
@@ -4551,6 +4572,26 @@ function updateLevelUpInput(frameDt) {
     return;
   }
   
+  // Mouse click on a level-up card
+  if (Input.mouseClicked) {
+    const w = game.width;
+    const h = game.height;
+    const maxCardW = isMobile ? Math.floor((w - 40) / levelUpOptions.length - 10) : 220;
+    const cardW = Math.min(220, maxCardW);
+    const cardH = isMobile ? Math.min(120, h * 0.35) : 120;
+    const gap = isMobile ? 8 : 20;
+    const totalW = levelUpOptions.length * cardW + (levelUpOptions.length - 1) * gap;
+    const startX = (w - totalW) / 2;
+    const cardY = h / 2 - cardH / 2;
+    for (let i = 0; i < levelUpOptions.length; i++) {
+      const cx = startX + i * (cardW + gap);
+      if (Input.consumeClick(cx, cardY, cardW, cardH)) {
+        selectLevelUpOption(levelUpOptions[i]);
+        return;
+      }
+    }
+  }
+  
   // Touch: tap on a level-up card to select it
   if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
     const w = game.width;
@@ -6009,6 +6050,11 @@ function init() {
               Touch.tapConsumed = true;
               startGame(); break;
             }
+            // Mouse click: anywhere on title screen to start
+            if (Input.mouseClicked) {
+              Input.mouseClicked = false;
+              startGame(); break;
+            }
             if (Input.menuUp()) { game.titleMenuSelection = 0; SFX.menuNav(); game.attractTimer = 3; }
             if (Input.menuDown()) { game.titleMenuSelection = 1; SFX.menuNav(); game.attractTimer = 3; }
             if (Input.confirmPressed() || Input.startPressed()) {
@@ -6022,8 +6068,9 @@ function init() {
               }
             }
           } else {
-            // During demo/scores phases, start pressed or tap begins game
+            // During demo/scores phases, start pressed or tap/click begins game
             if (Input.startPressed()) { startGame(); break; }
+            if (Input.mouseClicked) { Input.mouseClicked = false; startGame(); break; }
             if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
               Touch.tapConsumed = true;
               startGame(); break;
@@ -6115,10 +6162,40 @@ function init() {
           if (Input.startPressed() || Input.wasPressed('Escape')) {
             game.state = 'playing';
           }
-          // Touch: tap to resume
+          // B button or Backspace = quit to menu
+          if (Input.backPressed()) {
+            game.state = 'title';
+            game.attractPhase = 0;
+            game.attractTimer = 0;
+            game.titleMenuSelection = 0;
+            if (sfxGain) sfxGain.gain.value = 1.0;
+            break;
+          }
+          // Mouse click on RESUME or QUIT
+          if (Input.mouseClicked) {
+            const w = game.width, h = game.height;
+            if (Input.consumeClick(w/2 - 120, h/2 + 20, 240, 35)) {
+              game.state = 'playing';
+            } else if (Input.consumeClick(w/2 - 120, h/2 + 65, 240, 35)) {
+              game.state = 'title';
+              game.attractPhase = 0;
+              game.attractTimer = 0;
+              game.titleMenuSelection = 0;
+              if (sfxGain) sfxGain.gain.value = 1.0;
+            }
+          }
+          // Touch: tap RESUME or QUIT
           if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
-            Touch.tapConsumed = true;
-            game.state = 'playing';
+            const w = game.width, h = game.height;
+            if (Touch.consumeTap(w/2 - 120, h/2 + 20, 240, 35)) {
+              game.state = 'playing';
+            } else if (Touch.consumeTap(w/2 - 120, h/2 + 65, 240, 35)) {
+              game.state = 'title';
+              game.attractPhase = 0;
+              game.attractTimer = 0;
+              game.titleMenuSelection = 0;
+              if (sfxGain) sfxGain.gain.value = 1.0;
+            }
           }
           break;
           
@@ -6130,6 +6207,7 @@ function init() {
           game.attractTimer += dt;
           game.attractReturnTimer -= dt;
           if (Input.startPressed()) { startGame(); break; }
+          if (Input.mouseClicked) { Input.mouseClicked = false; startGame(); break; }
           // Touch: tap to play again
           if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
             Touch.tapConsumed = true;
@@ -6164,6 +6242,7 @@ function init() {
           game.postgameTimer -= dt;
           // Start pressed = play again immediately
           if (Input.startPressed() || Input.confirmPressed()) { startGame(); break; }
+          if (Input.mouseClicked) { Input.mouseClicked = false; startGame(); break; }
           // Touch: tap to play again
           if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
             Touch.tapConsumed = true;
@@ -6255,14 +6334,40 @@ function init() {
         drawWorld(ctx);
         drawHUD(ctx);
         if (game.state === 'paused') {
-          ctx.fillStyle = 'rgba(0,0,0,0.5)';
-          ctx.fillRect(0, 0, game.width, game.height);
+          const w = game.width, h = game.height;
+          ctx.fillStyle = 'rgba(0,0,0,0.65)';
+          ctx.fillRect(0, 0, w, h);
+          ctx.textAlign = 'center';
+          
+          // Title
           ctx.fillStyle = C.textWhite;
           ctx.font = "bold 24px 'Press Start 2P', monospace";
-          ctx.textAlign = 'center';
-          ctx.fillText('PAUSED', game.width / 2, game.height / 2);
-          ctx.font = "10px 'Press Start 2P', monospace";
-          ctx.fillText(Input.gamepad ? 'PRESS START TO RESUME' : 'PRESS ESC TO RESUME', game.width / 2, game.height / 2 + 40);
+          ctx.fillText('PAUSED', w / 2, h / 2 - 10);
+          
+          // RESUME button
+          ctx.fillStyle = 'rgba(0,229,255,0.15)';
+          ctx.fillRect(w/2 - 120, h/2 + 20, 240, 35);
+          ctx.strokeStyle = C.textCyan;
+          ctx.lineWidth = 2;
+          ctx.strokeRect(w/2 - 120, h/2 + 20, 240, 35);
+          ctx.fillStyle = C.textCyan;
+          ctx.font = "bold 12px 'Press Start 2P', monospace";
+          ctx.fillText('RESUME', w / 2, h / 2 + 44);
+          
+          // QUIT button
+          ctx.fillStyle = 'rgba(255,68,68,0.15)';
+          ctx.fillRect(w/2 - 120, h/2 + 65, 240, 35);
+          ctx.strokeStyle = '#ff4444';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(w/2 - 120, h/2 + 65, 240, 35);
+          ctx.fillStyle = '#ff4444';
+          ctx.font = "bold 12px 'Press Start 2P', monospace";
+          ctx.fillText('QUIT TO MENU', w / 2, h / 2 + 89);
+          
+          // Controls hint
+          ctx.fillStyle = '#555555';
+          ctx.font = "7px 'Press Start 2P', monospace";
+          ctx.fillText(Touch.active ? 'TAP TO SELECT' : (Input.gamepad ? 'START: RESUME    B: QUIT' : 'ESC: RESUME    BACKSPACE: QUIT'), w / 2, h / 2 + 120);
         }
         if (game.state === 'levelup') {
           drawLevelUpUI(ctx);
