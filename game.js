@@ -389,10 +389,11 @@ function playNoise(duration, volume, delay) {
 // Named sound effects
 const SFX = {
   playerLaser() {
-    // Robotron-style rapid zap — raw, aggressive, arcade
-    const f = 1100 + randF(-60, 60);
-    playTone(f, 0.04, 'square', 0.18, 400);
-    playTone(f * 0.5, 0.025, 'sawtooth', 0.08, f * 0.2, 0.008);
+    // Defender-style dual-tone sawtooth sweep — gritty, raw, cuts through chaos
+    const f = 1600 + randF(-50, 50);
+    playTone(f, 0.035, 'sawtooth', 0.22, 400);
+    playTone(f * 0.7, 0.03, 'sawtooth', 0.14, 300, 0.005);
+    playTone(f * 1.5, 0.015, 'square', 0.07, 600, 0.002);
   },
   playerDamage() {
     playNoise(0.08, 0.2);

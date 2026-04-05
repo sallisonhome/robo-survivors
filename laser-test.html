@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Laser Sound Options</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; color:#fff; font-family:'Press Start 2P',monospace; padding:40px; }
+h1 { color:#00e5ff; font-size:20px; margin-bottom:30px; text-align:center; }
+.option { background:#111; border:2px solid #333; padding:20px; margin:15px 0; border-radius:8px; cursor:pointer; transition: all 0.2s; }
+.option:hover { border-color:#00e5ff; background:#1a1a2a; }
+.option h2 { color:#ffcc00; font-size:12px; margin-bottom:8px; }
+.option p { color:#888; font-size:8px; line-height:1.6; }
+.play-btn { display:inline-block; background:#00e5ff; color:#000; padding:8px 16px; font-family:inherit; font-size:9px; border:none; cursor:pointer; margin-top:10px; margin-right:10px; }
+.play-btn:hover { background:#44ffff; }
+.burst-btn { background:#ff6644; }
+.burst-btn:hover { background:#ff8866; }
+.current { border-color:#ff4444; }
+.current h2::after { content:' (CURRENT)'; color:#ff4444; }
+</style></head><body>
+<h1>CHOOSE YOUR LASER SOUND</h1>
+<p style="color:#666;font-size:8px;text-align:center;margin-bottom:20px;">Click PLAY to hear a single shot. Click BURST to hear rapid fire (how it sounds in gameplay).</p>
+
+<div class="option current" onclick="playOption(0)">
+  <h2>OPTION A: CURRENT SOUND</h2>
+  <p>The existing square wave zap. Included for comparison.</p>
+  <button class="play-btn" onclick="event.stopPropagation();playOption(0)">PLAY</button>
+  <button class="play-btn burst-btn" onclick="event.stopPropagation();burstOption(0)">BURST x8</button>
+</div>
+
+<div class="option" onclick="playOption(1)">
+  <h2>OPTION B: ROBOTRON CLASSIC</h2>
+  <p>Faithful to the original Robotron laser — short, bright, high-pitched snap with a quick pitch drop. Raw and aggressive like the Williams hardware.</p>
+  <button class="play-btn" onclick="event.stopPropagation();playOption(1)">PLAY</button>
+  <button class="play-btn burst-btn" onclick="event.stopPropagation();burstOption(1)">BURST x8</button>
+</div>
+
+<div class="option" onclick="playOption(2)">
+  <h2>OPTION C: ENERGY PULSE</h2>
+  <p>Punchy mid-range pulse with a resonant body. Feels like an energy weapon, not a bullet. Satisfying on repeat without being shrill.</p>
+  <button class="play-btn" onclick="event.stopPropagation();playOption(2)">PLAY</button>
+  <button class="play-btn burst-btn" onclick="event.stopPropagation();burstOption(2)">BURST x8</button>
+</div>
+
+<div class="option" onclick="playOption(3)">
+  <h2>OPTION D: PLASMA SNAP</h2>
+  <p>Sharp attack with a noise burst layered in — sounds like a plasma discharge. More sci-fi, less retro. Has bite.</p>
+  <button class="play-btn" onclick="event.stopPropagation();playOption(3)">PLAY</button>
+  <button class="play-btn burst-btn" onclick="event.stopPropagation();burstOption(3)">BURST x8</button>
+</div>
+
+<div class="option" onclick="playOption(4)">
+  <h2>OPTION E: DEFENDER ZAP</h2>
+  <p>Inspired by Defender's laser — dual-tone sawtooth with a fast downward sweep. Gritty, raw, distinctly arcade. Cuts through chaos.</p>
+  <button class="play-btn" onclick="event.stopPropagation();playOption(4)">PLAY</button>
+  <button class="play-btn burst-btn" onclick="event.stopPropagation();burstOption(4)">BURST x8</button>
+</div>
+
+<script>
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
+const master = ctx.createGain(); master.gain.value = 0.8; master.connect(ctx.destination);
+
+function tone(freq, dur, type, vol, pitchEnd, delay) {
+  const t = ctx.currentTime + (delay||0);
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = type||'square';
+  o.frequency.setValueAtTime(freq, t);
+  if (pitchEnd) o.frequency.exponentialRampToValueAtTime(Math.max(pitchEnd,20), t+dur);
+  g.gain.setValueAtTime(vol||0.15, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t+dur+0.01);
+}
+function noise(dur, vol, delay) {
+  const t = ctx.currentTime + (delay||0);
+  const buf = ctx.createBuffer(1, ctx.sampleRate*dur, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+  const s = ctx.createBufferSource(); s.buffer=buf;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(vol||0.1, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t+dur);
+  s.connect(g).connect(master); s.start(t);
+}
+
+const options = [
+  // A: Current
+  () => {
+    const f = 1100 + Math.random()*80-40;
+    tone(f, 0.04, 'square', 0.18, 400);
+    tone(f*0.5, 0.025, 'sawtooth', 0.08, f*0.2, 0.008);
+  },
+  // B: Robotron Classic
+  () => {
+    const f = 1800 + Math.random()*100-50;
+    tone(f, 0.03, 'square', 0.2, 600);
+    tone(f*0.75, 0.02, 'square', 0.1, 400, 0.005);
+  },
+  // C: Energy Pulse
+  () => {
+    const f = 600 + Math.random()*60-30;
+    tone(f, 0.05, 'sawtooth', 0.2, 200);
+    tone(f*2, 0.03, 'sine', 0.08, f, 0.01);
+    tone(f*0.5, 0.04, 'square', 0.06, f*0.2, 0.005);
+  },
+  // D: Plasma Snap
+  () => {
+    const f = 1400 + Math.random()*80-40;
+    tone(f, 0.025, 'square', 0.18, 500);
+    noise(0.02, 0.12);
+    tone(f*0.6, 0.02, 'sawtooth', 0.06, 200, 0.01);
+  },
+  // E: Defender Zap
+  () => {
+    const f = 1600 + Math.random()*100-50;
+    tone(f, 0.035, 'sawtooth', 0.2, 400);
+    tone(f*0.7, 0.03, 'sawtooth', 0.12, 300, 0.005);
+    tone(f*1.5, 0.015, 'square', 0.06, 600, 0.002);
+  },
+];
+
+function playOption(i) {
+  if (ctx.state==='suspended') ctx.resume();
+  options[i]();
+}
+
+function burstOption(i) {
+  if (ctx.state==='suspended') ctx.resume();
+  for(let j=0;j<8;j++) {
+    setTimeout(()=>options[i](), j*80);
+  }
+}
+</script>
+</body></html>
