@@ -4506,80 +4506,102 @@ function drawAttractScores(ctx) {
   const w = game.width;
   const h = game.height;
   const t = game.attractTimer;
-  const tab = game.attractScoreTab;
-  const tabTimer = game.attractScoreTabTimer;
   
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, w, h);
   
+  // Title
   ctx.textAlign = 'center';
-  
-  // Tab title
-  const titles = ["TODAY'S BEST", "THIS WEEK'S BEST", 'ALL TIME LEGENDS'];
-  const titleColors = ['#44ff44', '#ffcc00', '#ff4444'];
-  ctx.fillStyle = titleColors[tab];
-  ctx.font = "bold 20px 'Press Start 2P', monospace";
-  ctx.shadowColor = titleColors[tab];
+  ctx.fillStyle = C.textCyan;
+  ctx.font = "bold 16px 'Press Start 2P', monospace";
+  ctx.shadowColor = C.textCyan;
   ctx.shadowBlur = 10;
-  ctx.fillText(titles[tab], w / 2, h * 0.1);
+  ctx.fillText('HIGH SCORES', w / 2, 35);
   ctx.shadowBlur = 0;
   
-  // Get scores for this tier
-  const scores = getFilteredScores(tab);
+  // Three columns: Daily | Weekly | All Time
+  const titles = ["TODAY", "THIS WEEK", 'ALL TIME'];
+  const titleColors = ['#44ff44', '#ffcc00', '#ff4444'];
+  const colW = w / 3;
   
-  if (scores.length === 0) {
-    ctx.fillStyle = '#666666';
-    ctx.font = "12px 'Press Start 2P', monospace";
-    ctx.fillText('NO SCORES YET', w / 2, h * 0.4);
-    ctx.fillStyle = '#888888';
-    ctx.font = "9px 'Press Start 2P', monospace";
-    ctx.fillText('BE THE FIRST!', w / 2, h * 0.48);
-  } else {
-    // Header
-    ctx.fillStyle = '#666666';
-    ctx.font = "8px 'Press Start 2P', monospace";
-    ctx.fillText('RANK   INITIALS      SCORE       WAVE  LVL', w / 2, h * 0.17);
+  for (let col = 0; col < 3; col++) {
+    const cx = colW * col + colW / 2;
+    const scores = getFilteredScores(col);
     
-    // Entries (staggered fade-in)
+    // Column title
+    ctx.textAlign = 'center';
+    ctx.fillStyle = titleColors[col];
+    ctx.font = "bold 9px 'Press Start 2P', monospace";
+    ctx.shadowColor = titleColors[col];
+    ctx.shadowBlur = 6;
+    ctx.fillText(titles[col], cx, 62);
+    ctx.shadowBlur = 0;
+    
+    // Divider line
+    ctx.strokeStyle = titleColors[col];
+    ctx.globalAlpha = 0.3;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - colW * 0.4, 70);
+    ctx.lineTo(cx + colW * 0.4, 70);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    
+    if (scores.length === 0) {
+      ctx.fillStyle = '#444444';
+      ctx.font = "6px 'Press Start 2P', monospace";
+      ctx.fillText('NO SCORES', cx, 120);
+      ctx.fillText('YET', cx, 134);
+      continue;
+    }
+    
+    // Entries
     for (let i = 0; i < scores.length; i++) {
       const s = scores[i];
-      const rowDelay = i * 0.1;
-      const rowAlpha = clamp((tabTimer - rowDelay) * 5, 0, 1);
+      const rowDelay = i * 0.08;
+      const rowAlpha = clamp((t - rowDelay) * 4, 0, 1);
       if (rowAlpha <= 0) continue;
       
       ctx.globalAlpha = rowAlpha;
-      const y = h * 0.22 + i * 28;
+      const y = 88 + i * 20;
       const isTop = i === 0;
       
-      // Rank
-      ctx.fillStyle = isTop ? titleColors[tab] : C.textWhite;
-      ctx.font = `${isTop ? 'bold ' : ''}10px 'Press Start 2P', monospace`;
+      ctx.fillStyle = isTop ? titleColors[col] : '#aaaaaa';
+      ctx.font = `${isTop ? 'bold ' : ''}6px 'Press Start 2P', monospace`;
       if (isTop) {
-        ctx.shadowColor = titleColors[tab];
-        ctx.shadowBlur = 8;
+        ctx.shadowColor = titleColors[col];
+        ctx.shadowBlur = 5;
       }
       
-      const row = `${(i + 1).toString().padStart(2, ' ')}.  ${s.initials}    ${s.score.toLocaleString().padStart(10, ' ')}    W${s.wave}   L${s.level}`;
-      ctx.fillText(row, w / 2, y);
+      // Rank + initials on one line, score + wave on next
+      ctx.textAlign = 'center';
+      ctx.fillText(`${i + 1}. ${s.initials}  ${s.score.toLocaleString()}`, cx, y);
       ctx.shadowBlur = 0;
+      
+      // Wave/level below in smaller dimmer text
+      ctx.fillStyle = isTop ? titleColors[col] : '#666666';
+      ctx.font = "5px 'Press Start 2P', monospace";
+      ctx.globalAlpha = rowAlpha * 0.7;
+      ctx.fillText(`W${s.wave} L${s.level}`, cx, y + 9);
     }
     ctx.globalAlpha = 1;
   }
   
-  // Tab indicator dots
-  for (let i = 0; i < 3; i++) {
-    ctx.fillStyle = i === tab ? '#ffffff' : '#444444';
-    ctx.beginPath();
-    ctx.arc(w / 2 - 20 + i * 20, h * 0.92, 4, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  // Vertical dividers between columns
+  ctx.strokeStyle = '#222222';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(colW, 55); ctx.lineTo(colW, h * 0.88);
+  ctx.moveTo(colW * 2, 55); ctx.lineTo(colW * 2, h * 0.88);
+  ctx.stroke();
   
   // Press start
-  const pressAlpha = 0.2 + Math.sin(t * Math.PI) * 0.4;
+  ctx.textAlign = 'center';
+  const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.5;
   ctx.globalAlpha = pressAlpha;
   ctx.fillStyle = C.textWhite;
-  ctx.font = "10px 'Press Start 2P', monospace";
-  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.97);
+  ctx.font = "12px 'Press Start 2P', monospace";
+  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.95);
   ctx.globalAlpha = 1;
 }
 
@@ -5189,17 +5211,9 @@ function init() {
           if (game.attractPhase === 0 && game.attractTimer > 60) {
             game.attractPhase = 1; game.attractTimer = 0; demoInited = false; // -> demo (reinit scene)
           } else if (game.attractPhase === 1 && game.attractTimer > 30) {
-            game.attractPhase = 2; game.attractTimer = 0; game.attractScoreTab = 0; game.attractScoreTabTimer = 0; // -> scores
+            game.attractPhase = 2; game.attractTimer = 0; // -> scores
           } else if (game.attractPhase === 2 && game.attractTimer > 30) {
             game.attractPhase = 0; game.attractTimer = 0; // -> title
-          }
-          // Score tab cycling (10s each: daily, weekly, all-time)
-          if (game.attractPhase === 2) {
-            game.attractScoreTabTimer += dt;
-            if (game.attractScoreTabTimer > 10) {
-              game.attractScoreTabTimer = 0;
-              game.attractScoreTab = (game.attractScoreTab + 1) % 3;
-            }
           }
           break;
         case 'highscore_entry':
