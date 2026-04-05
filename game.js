@@ -321,41 +321,37 @@ function mobileLayoutUpdate() {
   
   const screenW = window.innerWidth;
   const screenH = window.innerHeight;
+  // Always use the long edge as game width, short edge as game height
+  const longEdge = Math.max(screenW, screenH);
+  const shortEdge = Math.min(screenW, screenH);
   mobileIsPortrait = screenH > screenW;
   
+  // Game resolution is ALWAYS landscape
+  canvas.width = longEdge;
+  canvas.height = shortEdge;
+  if (typeof game !== 'undefined' && game.width !== undefined) {
+    game.width = longEdge;
+    game.height = shortEdge;
+  }
+  
   if (mobileIsPortrait) {
-    // Portrait: rotate canvas so game is landscape
-    // Game width = screen height (the long edge), game height = screen width (short edge)
-    const gw = screenH;
-    const gh = screenW;
-    canvas.width = gw;
-    canvas.height = gh;
+    // CSS-rotate canvas to display landscape in portrait device
     canvas.style.position = 'fixed';
     canvas.style.top = '0';
     canvas.style.left = '0';
-    canvas.style.width = screenH + 'px';
-    canvas.style.height = screenW + 'px';
+    canvas.style.width = longEdge + 'px';
+    canvas.style.height = shortEdge + 'px';
     canvas.style.transform = 'rotate(90deg) translateY(-100%)';
     canvas.style.transformOrigin = 'top left';
-    if (typeof game !== 'undefined' && game.width !== undefined) {
-      game.width = gw;
-      game.height = gh;
-    }
   } else {
-    // Landscape: normal
-    canvas.width = screenW;
-    canvas.height = screenH;
-    canvas.style.position = '';
-    canvas.style.top = '';
-    canvas.style.left = '';
-    canvas.style.width = '100%';
-    canvas.style.height = '100%';
+    // Already landscape — fill screen
+    canvas.style.position = 'fixed';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.width = longEdge + 'px';
+    canvas.style.height = shortEdge + 'px';
     canvas.style.transform = '';
     canvas.style.transformOrigin = '';
-    if (typeof game !== 'undefined' && game.width !== undefined) {
-      game.width = screenW;
-      game.height = screenH;
-    }
   }
 }
 
@@ -5953,23 +5949,22 @@ function init() {
   
   // Set canvas size
   function resize() {
-    if (isMobile) {
-      mobileLayoutUpdate(); // handles canvas size + CSS rotation
-    } else {
-      game.canvas.width = window.innerWidth;
-      game.canvas.height = window.innerHeight;
-      game.width = game.canvas.width;
-      game.height = game.canvas.height;
-    }
+    if (isMobile) return; // mobile is locked — never resize
+    game.canvas.width = window.innerWidth;
+    game.canvas.height = window.innerHeight;
+    game.width = game.canvas.width;
+    game.height = game.canvas.height;
     if (Touch.active) Touch.resize();
   }
-  resize();
-  window.addEventListener('resize', resize);
-  window.addEventListener('orientationchange', () => {
-    setTimeout(resize, 100);
-    setTimeout(resize, 300);
-    setTimeout(resize, 600);
-  });
+  
+  if (isMobile) {
+    // Lock to landscape dimensions ONCE and never change
+    mobileLayoutUpdate();
+    if (Touch.active) Touch.resize();
+  } else {
+    resize();
+    window.addEventListener('resize', resize);
+  }
   
   Input.init();
   Touch.init();
