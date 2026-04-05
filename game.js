@@ -3263,10 +3263,77 @@ function drawWeapons(ctx) {
 
 let stompyActive = false;
 let stompyTimer = 0;
+let stompyVoiceTimer = 0; // countdown to next stompy callout
+let stompyVoiceIndex = 0; // alternates between callouts
+
+// ---- STOMPY VOICE SYSTEM ----
+// Uses SpeechSynthesis for AI computer voice callouts
+const stompyVoices = {
+  _femaleVoice: null,
+  _maleVoice: null,
+  _voicesLoaded: false,
+  
+  _loadVoices() {
+    if (this._voicesLoaded || typeof speechSynthesis === 'undefined') return;
+    const voices = speechSynthesis.getVoices();
+    if (voices.length === 0) return; // voices not loaded yet
+    this._voicesLoaded = true;
+    // Try to find good English voices
+    // Female: prefer Google, Microsoft, or any female voice
+    for (const v of voices) {
+      const name = v.name.toLowerCase();
+      if (!v.lang.startsWith('en')) continue;
+      if (!this._femaleVoice && (name.includes('female') || name.includes('samantha') || name.includes('zira') || name.includes('karen') || name.includes('victoria') || name.includes('google us') || name.includes('fiona'))) {
+        this._femaleVoice = v;
+      }
+      if (!this._maleVoice && (name.includes('male') || name.includes('daniel') || name.includes('david') || name.includes('alex') || name.includes('fred') || name.includes('google uk male') || name.includes('james'))) {
+        this._maleVoice = v;
+      }
+    }
+    // Fallback: just use first two English voices
+    const enVoices = voices.filter(v => v.lang.startsWith('en'));
+    if (!this._femaleVoice && enVoices.length > 0) this._femaleVoice = enVoices[0];
+    if (!this._maleVoice && enVoices.length > 1) this._maleVoice = enVoices[1];
+    if (!this._maleVoice) this._maleVoice = this._femaleVoice;
+  },
+  
+  speakActivation() {
+    if (typeof speechSynthesis === 'undefined') return;
+    this._loadVoices();
+    speechSynthesis.cancel(); // clear any pending
+    const u = new SpeechSynthesisUtterance('Stompy Activated');
+    u.rate = 1.1;  // slightly fast — confident
+    u.pitch = 1.4; // higher pitch — female AI computer
+    u.volume = 0.9;
+    if (this._femaleVoice) u.voice = this._femaleVoice;
+    speechSynthesis.speak(u);
+  },
+  
+  speakCallout(text) {
+    if (typeof speechSynthesis === 'undefined') return;
+    this._loadVoices();
+    // Don't interrupt activation announcement
+    if (speechSynthesis.speaking) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.8;  // slower — powerful, ominous
+    u.pitch = 0.3; // very low pitch — deep robotic male
+    u.volume = 0.8;
+    if (this._maleVoice) u.voice = this._maleVoice;
+    speechSynthesis.speak(u);
+  },
+};
+
+// Pre-load voices (some browsers require this)
+if (typeof speechSynthesis !== 'undefined') {
+  speechSynthesis.onvoiceschanged = () => stompyVoices._loadVoices();
+  stompyVoices._loadVoices(); // try immediately too
+}
 
 function activateStompy() {
   stompyActive = true;
   stompyTimer = 30;
+  stompyVoiceTimer = 4; // first callout 4 seconds after activation
+  stompyVoiceIndex = 0;
   game.camZoom = 0.8; // Zoom out
   game.shakeTimer = 0.5;
   game.shakeIntensity = 6;
@@ -3274,11 +3341,23 @@ function activateStompy() {
   game.flashTimer = 0.3;
   game.flashColor = '#ffffff';
   SFX.stompyTransform();
+  // "Stompy Activated" — bold female AI voice
+  stompyVoices.speakActivation();
 }
 
 function updateStompy(dt) {
   if (!stompyActive) return;
   stompyTimer -= dt;
+  
+  // ---- STOMPY VOICE CALLOUTS ----
+  // Deep robotic male voice at reasonable cadence (~every 6-8 seconds)
+  stompyVoiceTimer -= dt;
+  if (stompyVoiceTimer <= 0 && stompyTimer > 3) { // stop callouts in last 3 seconds
+    const callouts = ['Stompy Stomping!', 'Stompy Smash!'];
+    stompyVoices.speakCallout(callouts[stompyVoiceIndex % callouts.length]);
+    stompyVoiceIndex++;
+    stompyVoiceTimer = 6 + Math.random() * 3; // 6-9 seconds between callouts
+  }
   
   // Stomp footstep shake
   if (Math.abs(Input.moveX) > 0.01 || Math.abs(Input.moveY) > 0.01) {
@@ -3313,6 +3392,8 @@ function updateStompy(dt) {
     stompyActive = false;
     game.camZoom = 1.0;
     game.player.iframes = 3.0; // Grace period
+    // Cancel any pending speech
+    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
   }
 }
 
@@ -5263,6 +5344,9 @@ function resetGame() {
   game.powerScore = 0;
   stompyActive = false;
   stompyTimer = 0;
+  stompyVoiceTimer = 0;
+  stompyVoiceIndex = 0;
+  if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
   game.camZoom = 1.0;
   resetWeaponState();
   
