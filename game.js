@@ -2427,6 +2427,7 @@ function checkLevelUp() {
     
     // Trigger level-up screen
     game.state = 'levelup';
+    game._levelUpInputDelay = 0.15; // brief input lockout so gameplay inputs don't bleed in
     generateLevelUpOptions();
     SFX.levelUp();
     emitParticles(p.x, p.y, 20, C.textCyan, 20, 150, 0.6, 4);
@@ -4011,7 +4012,14 @@ function drawLevelUpUI(ctx) {
   ctx.fillText(Input.gamepad ? 'STICK/D-PAD: SELECT    A: CONFIRM' : 'ARROWS: SELECT    ENTER: CONFIRM', w / 2, h - 50);
 }
 
-function updateLevelUpInput() {
+// Called ONCE per frame, OUTSIDE the fixed timestep loop
+function updateLevelUpInput(frameDt) {
+  // Input lockout to prevent bleed from gameplay
+  if (game._levelUpInputDelay > 0) {
+    game._levelUpInputDelay -= frameDt;
+    return;
+  }
+  
   // Navigate with D-pad, left stick, OR arrow keys
   if (Input.menuLeft()) {
     levelUpSelection = Math.max(0, levelUpSelection - 1);
@@ -5231,10 +5239,10 @@ function init() {
           }
           break;
         case 'highscore_entry':
-          updateHighScoreEntry(dt);
+          // Input handled per-frame below
           break;
         case 'controls':
-          updateControlsMenu(dt);
+          // Input handled per-frame below
           break;
           
         case 'playing':
@@ -5295,7 +5303,7 @@ function init() {
           break;
           
         case 'levelup':
-          updateLevelUpInput();
+          // Input handled per-frame below, not per-tick
           break;
           
         case 'gameover':
@@ -5311,9 +5319,21 @@ function init() {
           break;
       }
       
-      Input.endFrame();
+      // Only clear per-tick input flags during gameplay states
+      if (game.state === 'playing' || game.state === 'paused' || game.state === 'title' || game.state === 'gameover') {
+        Input.endFrame();
+      }
       accumulator -= TICK_RATE;
     }
+    
+    // Per-frame menu input (outside fixed timestep for snappy 1:1 response)
+    const frameDt = delta / 1000;
+    if (game.state === 'levelup') updateLevelUpInput(frameDt);
+    if (game.state === 'controls') updateControlsMenu(frameDt);
+    if (game.state === 'highscore_entry') updateHighScoreEntry(frameDt);
+    
+    // Always clear input at end of frame
+    Input.endFrame();
     
     // Render
     const ctx = game.ctx;
