@@ -342,29 +342,30 @@ function mobileLayoutInit() {
   const canvas = document.getElementById('gameCanvas');
   if (!canvas) return;
   
-  // Determine device edges ONCE
-  const sw = window.screen.width || window.innerWidth;
-  const sh = window.screen.height || window.innerHeight;
+  // Use screen dimensions (never change with rotation)
+  const sw = window.screen.width;
+  const sh = window.screen.height;
   mobileLongEdge = Math.max(sw, sh);
   mobileShortEdge = Math.min(sw, sh);
-  mobileIsPortrait = window.innerHeight > window.innerWidth;
+  // Multiply by devicePixelRatio for sharp rendering, but cap at reasonable size
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
   
-  // Set canvas to landscape resolution — NEVER changes
-  canvas.width = mobileLongEdge;
-  canvas.height = mobileShortEdge;
+  // Set canvas internal resolution ONCE
+  canvas.width = mobileLongEdge * dpr;
+  canvas.height = mobileShortEdge * dpr;
   
-  // Fixed CSS — covers full screen in landscape orientation
+  // CSS: use vmax/vmin so the canvas always fills the screen regardless of rotation
+  // vmax = always the long edge, vmin = always the short edge
   canvas.style.position = 'fixed';
   canvas.style.top = '0';
   canvas.style.left = '0';
-  canvas.style.width = mobileLongEdge + 'px';
-  canvas.style.height = mobileShortEdge + 'px';
+  canvas.style.width = '100vmax';
+  canvas.style.height = '100vmin';
+  canvas.style.transform = '';
+  canvas.style.transformOrigin = '';
   
-  if (mobileIsPortrait) {
-    canvas.style.transform = 'rotate(90deg) translateY(-100%)';
-    canvas.style.transformOrigin = 'top left';
-  }
-  // If already landscape, no transform needed — the fixed positioning handles it
+  // Scale the canvas context so game coordinates match the logical size
+  mobileIsPortrait = false; // with vmax/vmin we never need rotation
 }
 
 const Touch = {
@@ -440,6 +441,11 @@ const Touch = {
     e.preventDefault();
     // Resume audio if already created (don't create here — startGame handles that)
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    // Request fullscreen to hide browser chrome (only works on user gesture)
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      const el = document.documentElement;
+      (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el).catch(() => {});
+    }
     // Game dimensions (always landscape)
     const gw = game.width || window.innerWidth;
     const gh = game.height || window.innerHeight;
@@ -5994,6 +6000,9 @@ function init() {
     mobileLayoutInit();
     game.width = mobileLongEdge;
     game.height = mobileShortEdge;
+    // Scale context so game draws at logical resolution, canvas renders at dpr resolution
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    game.ctx.scale(dpr, dpr);
     if (Touch.active) Touch.resize();
   } else {
     resize();
