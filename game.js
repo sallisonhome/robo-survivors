@@ -307,38 +307,56 @@ const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/
   (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent)) || // iPadOS spoofs Mac
   (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches);
 
-// ---- LANDSCAPE ONLY ON MOBILE ----
-// Show rotate overlay in portrait, hide in landscape. No CSS rotation tricks.
-function checkMobileOrientation() {
+// ---- FORCE LANDSCAPE ON MOBILE ----
+// Mobile ALWAYS renders in landscape. In portrait, CSS-rotate the canvas 90deg.
+// The game's internal resolution is always landscape (wider than tall).
+// Touch coordinates are remapped in the Touch handler when rotated.
+let mobileIsPortrait = false;
+function mobileLayoutUpdate() {
   if (!isMobile) return;
   const overlay = document.getElementById('rotateOverlay');
+  if (overlay) overlay.style.display = 'none'; // never show overlay
   const canvas = document.getElementById('gameCanvas');
-  if (!overlay || !canvas) return;
-  const isPortrait = window.innerHeight > window.innerWidth;
-  overlay.style.display = isPortrait ? 'flex' : 'none';
-  canvas.style.display = isPortrait ? 'none' : 'block';
-  // No CSS transforms — canvas is always normal orientation
-  canvas.style.position = '';
-  canvas.style.transform = '';
-  canvas.style.transformOrigin = '';
-  canvas.style.width = '100%';
-  canvas.style.height = '100%';
-}
-if (isMobile) {
-  document.addEventListener('DOMContentLoaded', checkMobileOrientation);
-  window.addEventListener('resize', checkMobileOrientation);
-  window.addEventListener('orientationchange', () => {
-    setTimeout(checkMobileOrientation, 100);
-    setTimeout(checkMobileOrientation, 300);
-    setTimeout(checkMobileOrientation, 600);
-  });
-  if (screen.orientation) {
-    screen.orientation.addEventListener('change', () => {
-      checkMobileOrientation();
-      setTimeout(checkMobileOrientation, 200);
-    });
+  if (!canvas) return;
+  
+  const screenW = window.innerWidth;
+  const screenH = window.innerHeight;
+  mobileIsPortrait = screenH > screenW;
+  
+  if (mobileIsPortrait) {
+    // Portrait: rotate canvas so game is landscape
+    // Game width = screen height (the long edge), game height = screen width (short edge)
+    const gw = screenH;
+    const gh = screenW;
+    canvas.width = gw;
+    canvas.height = gh;
+    canvas.style.position = 'fixed';
+    canvas.style.top = '0';
+    canvas.style.left = '0';
+    canvas.style.width = screenH + 'px';
+    canvas.style.height = screenW + 'px';
+    canvas.style.transform = 'rotate(90deg) translateY(-100%)';
+    canvas.style.transformOrigin = 'top left';
+    if (typeof game !== 'undefined' && game.width !== undefined) {
+      game.width = gw;
+      game.height = gh;
+    }
+  } else {
+    // Landscape: normal
+    canvas.width = screenW;
+    canvas.height = screenH;
+    canvas.style.position = '';
+    canvas.style.top = '';
+    canvas.style.left = '';
+    canvas.style.width = '100%';
+    canvas.style.height = '100%';
+    canvas.style.transform = '';
+    canvas.style.transformOrigin = '';
+    if (typeof game !== 'undefined' && game.width !== undefined) {
+      game.width = screenW;
+      game.height = screenH;
+    }
   }
-  setInterval(checkMobileOrientation, 500);
 }
 
 const Touch = {
@@ -386,8 +404,9 @@ const Touch = {
   },
   
   resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // Always use game dimensions (landscape even in portrait)
+    const w = game.width || window.innerWidth;
+    const h = game.height || window.innerHeight;
     // Scale stick size to screen
     this.stickRadius = Math.min(w, h) * 0.08;
     this.stickDeadzone = this.stickRadius * 0.15;
@@ -401,16 +420,28 @@ const Touch = {
     this.bombBtn = { x: btnX, y: stickBottom - this.buttonSize * 4 - 30 };
   },
   
+  _mapTouch(cx, cy) {
+    // When canvas is CSS-rotated in portrait, remap screen coords to game coords
+    if (mobileIsPortrait) {
+      return { x: cy, y: window.innerWidth - cx };
+    }
+    return { x: cx, y: cy };
+  },
+  
   _onTouchStart(e) {
     e.preventDefault();
-    // CRITICAL: Resume/create audio on touch — iOS requires this inside the gesture handler
-    resumeAudio();
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // Resume audio if already created (don't create here — startGame handles that)
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    // Game dimensions (always landscape)
+    const gw = game.width || window.innerWidth;
+    const gh = game.height || window.innerHeight;
+    const w = gw;
+    const h = gh;
     
     for (const t of e.changedTouches) {
-      const tx = t.clientX;
-      const ty = t.clientY;
+      const m = this._mapTouch(t.clientX, t.clientY);
+      const tx = m.x;
+      const ty = m.y;
       
       // Check button hits first
       if (game.state === 'playing') {
@@ -457,11 +488,12 @@ const Touch = {
   _onTouchMove(e) {
     e.preventDefault();
     for (const t of e.changedTouches) {
+      const m = this._mapTouch(t.clientX, t.clientY);
       if (this.leftStick.active && t.identifier === this.leftStick.id) {
-        this._updateStick(this.leftStick, t.clientX, t.clientY);
+        this._updateStick(this.leftStick, m.x, m.y);
       }
       if (this.rightStick.active && t.identifier === this.rightStick.id) {
-        this._updateStick(this.rightStick, t.clientX, t.clientY);
+        this._updateStick(this.rightStick, m.x, m.y);
       }
     }
   },
@@ -648,31 +680,11 @@ function playSample(name, volume) {
   return true;
 }
 
-let _audioWarmedUp = false;
 function resumeAudio() {
-  // If audio context doesn't exist yet, create it now (on user gesture)
-  if (!audioCtx) {
-    initAudio();
-  }
   if (audioCtx && audioCtx.state === 'suspended') {
     audioCtx.resume().catch(() => {});
   }
-  // Play a silent buffer to fully unlock the audio pipeline on iOS/Android
-  if (audioCtx && !_audioWarmedUp) {
-    _audioWarmedUp = true;
-    const silentBuf = audioCtx.createBuffer(1, 1, 22050);
-    const src = audioCtx.createBufferSource();
-    src.buffer = silentBuf;
-    src.connect(audioCtx.destination);
-    src.start();
-  }
 }
-
-// Mobile browsers require audio resume on user gesture — attach to ALL possible events
-// Use capture phase to fire before preventDefault in Touch handler
-['touchstart', 'touchend', 'mousedown', 'mouseup', 'click', 'keydown', 'pointerdown', 'pointerup'].forEach(evt => {
-  document.addEventListener(evt, resumeAudio, { capture: true, passive: true });
-});
 
 // Sound priority system
 let activeSounds = 0;
@@ -5915,10 +5927,24 @@ function resetGame() {
 }
 
 function startGame() {
+  // Create audio context HERE inside direct user gesture — most reliable for iOS/Android
   initAudio();
-  resumeAudio();
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
+  // Play silent buffer to fully prime the audio pipeline
+  if (audioCtx) {
+    try {
+      const silentBuf = audioCtx.createBuffer(1, 1, 22050);
+      const src = audioCtx.createBufferSource();
+      src.buffer = silentBuf;
+      src.connect(audioCtx.destination);
+      src.start();
+    } catch(e) {}
+  }
   resetGame();
-  SFX.gameStart();
+  // Small delay so audio pipeline is fully ready before first real sound
+  setTimeout(() => { SFX.gameStart(); }, 50);
 }
 
 function init() {
@@ -5927,14 +5953,23 @@ function init() {
   
   // Set canvas size
   function resize() {
-    game.canvas.width = window.innerWidth;
-    game.canvas.height = window.innerHeight;
-    game.width = game.canvas.width;
-    game.height = game.canvas.height;
+    if (isMobile) {
+      mobileLayoutUpdate(); // handles canvas size + CSS rotation
+    } else {
+      game.canvas.width = window.innerWidth;
+      game.canvas.height = window.innerHeight;
+      game.width = game.canvas.width;
+      game.height = game.canvas.height;
+    }
     if (Touch.active) Touch.resize();
   }
   resize();
   window.addEventListener('resize', resize);
+  window.addEventListener('orientationchange', () => {
+    setTimeout(resize, 100);
+    setTimeout(resize, 300);
+    setTimeout(resize, 600);
+  });
   
   Input.init();
   Touch.init();
