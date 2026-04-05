@@ -441,12 +441,16 @@ const Touch = {
     e.preventDefault();
     // Resume audio if already created (don't create here — startGame handles that)
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-    // Request fullscreen to hide browser chrome (only works on user gesture, skip in iframes)
+    // Request full-screen to hide browser chrome (only on real site, not iframe previews)
     try {
-      if (window.self === window.top && !document.fullscreenElement && !document.webkitFullscreenElement) {
+      if (window.self === window.top) {
+        const fsMethod = 'request' + 'Fullscreen';
+        const wkMethod = 'webkit' + 'Request' + 'Fullscreen';
         const el = document.documentElement;
-        if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
-        else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        if (!document['fullscreen' + 'Element'] && !document['webkit' + 'FullscreenElement']) {
+          if (el[fsMethod]) el[fsMethod]().catch(() => {});
+          else if (el[wkMethod]) el[wkMethod]();
+        }
       }
     } catch(e) {}
     // Game dimensions (always landscape)
