@@ -3577,9 +3577,9 @@ function startNextWave() {
     const brainCount = 3 + Math.floor(w / 2);
     for (let i = 0; i < brainCount; i++) {
       const b = spawnEnemyAtEdge('brain');
-      // +5% cumulative speed per brain wave after the first
+      // +10% cumulative speed per brain wave after the first
       if (b && game.brainWaveCount > 1) {
-        b.speed *= 1 + 0.05 * (game.brainWaveCount - 1);
+        b.speed *= 1 + 0.10 * (game.brainWaveCount - 1);
       }
     }
     // Apply cumulative +2% speed increase to ALL hulks per brain wave after the first
@@ -3609,8 +3609,8 @@ function startNextWave() {
   if (isNewCycle) {
     // Fresh batch
     game.humans = [];
-    game.cycleSurvivorCount = 15; // Fixed 15 survivors per 5-wave cycle — never increases
-    spawnHumans(15);
+    game.cycleSurvivorCount = 10; // Fixed 10 survivors per 5-wave cycle — never increases
+    spawnHumans(10);
     game.cycleSurvivorCount = game.humans.length; // actual spawned (may be less due to position conflicts)
   } else {
     // Carry-over: the survivors from last wave = cycleSurvivorCount - total killed across this cycle
