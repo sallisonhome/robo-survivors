@@ -307,62 +307,74 @@ const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/
   (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent)) || // iPadOS spoofs Mac
   (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches);
 
-// ---- LANDSCAPE ENFORCEMENT (runs immediately on mobile) ----
-// Must be outside Touch.init() so it works even before game starts
+// ---- FORCE LANDSCAPE ON MOBILE ----
+// When device is in portrait, rotate the canvas 90deg via CSS transform
+// so the game always renders in landscape orientation regardless of device position
 (function() {
   if (!isMobile) return;
   
-  let wasPortrait = true;
-  
-  function checkOrientation() {
-    const overlay = document.getElementById('rotateOverlay');
+  function enforceLayout() {
     const canvas = document.getElementById('gameCanvas');
-    if (!overlay || !canvas) return;
+    const overlay = document.getElementById('rotateOverlay');
+    if (!canvas) return;
+    // Always hide the rotate overlay — we handle it with CSS rotation instead
+    if (overlay) overlay.style.display = 'none';
     
     const isPortrait = window.innerHeight > window.innerWidth;
     if (isPortrait) {
-      overlay.style.display = 'flex';
-      canvas.style.display = 'none';
-      wasPortrait = true;
+      // Rotate canvas to fake landscape
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      canvas.style.position = 'fixed';
+      canvas.style.top = '0';
+      canvas.style.left = '0';
+      canvas.style.width = vh + 'px';
+      canvas.style.height = vw + 'px';
+      canvas.style.transform = 'rotate(90deg) translateY(-100%)';
+      canvas.style.transformOrigin = 'top left';
+      // Canvas resolution = landscape dimensions
+      canvas.width = vh;
+      canvas.height = vw;
+      if (typeof game !== 'undefined') {
+        game.width = vh;
+        game.height = vw;
+      }
     } else {
-      overlay.style.display = 'none';
-      canvas.style.display = 'block';
-      if (wasPortrait) {
-        wasPortrait = false;
-        // Force canvas resize when transitioning to landscape
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        if (typeof game !== 'undefined') {
-          game.width = canvas.width;
-          game.height = canvas.height;
-        }
+      // Normal landscape — remove forced rotation
+      canvas.style.position = '';
+      canvas.style.top = '';
+      canvas.style.left = '';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      canvas.style.transform = '';
+      canvas.style.transformOrigin = '';
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      if (typeof game !== 'undefined') {
+        game.width = window.innerWidth;
+        game.height = window.innerHeight;
       }
     }
   }
   
-  // Run on DOM ready and on every possible orientation signal
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', checkOrientation);
+    document.addEventListener('DOMContentLoaded', enforceLayout);
   } else {
-    checkOrientation();
+    enforceLayout();
   }
-  
-  window.addEventListener('resize', checkOrientation);
+  window.addEventListener('resize', enforceLayout);
   window.addEventListener('orientationchange', function() {
-    setTimeout(checkOrientation, 50);
-    setTimeout(checkOrientation, 150);
-    setTimeout(checkOrientation, 300);
-    setTimeout(checkOrientation, 500);
-    setTimeout(checkOrientation, 1000);
+    setTimeout(enforceLayout, 50);
+    setTimeout(enforceLayout, 200);
+    setTimeout(enforceLayout, 500);
   });
   if (screen.orientation) {
     screen.orientation.addEventListener('change', function() {
-      checkOrientation();
-      setTimeout(checkOrientation, 200);
+      enforceLayout();
+      setTimeout(enforceLayout, 200);
     });
   }
-  // Polling fallback every 500ms
-  setInterval(checkOrientation, 500);
+  setInterval(enforceLayout, 1000);
 })();
 
 const Touch = {
@@ -417,8 +429,10 @@ const Touch = {
   },
   
   resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // Use game-space dimensions (landscape even when device is portrait)
+    const isPortrait = isMobile && window.innerHeight > window.innerWidth;
+    const w = isPortrait ? window.innerHeight : window.innerWidth;
+    const h = isPortrait ? window.innerWidth : window.innerHeight;
     // Scale stick size to screen
     this.stickRadius = Math.min(w, h) * 0.08;
     this.stickDeadzone = this.stickRadius * 0.15;
@@ -430,14 +444,28 @@ const Touch = {
     this.bombBtn = { x: w - 80, y: h - 350 };
   },
   
+  // Remap touch coords when canvas is CSS-rotated in portrait mode
+  _remapTouch(clientX, clientY) {
+    const isPortrait = window.innerHeight > window.innerWidth;
+    if (isMobile && isPortrait) {
+      // Canvas is rotated 90deg CW, so screen coords need remapping:
+      // game X = screen Y, game Y = screenWidth - screen X
+      return { x: clientY, y: window.innerWidth - clientX };
+    }
+    return { x: clientX, y: clientY };
+  },
+  
   _onTouchStart(e) {
     e.preventDefault();
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    // Use game-space dimensions (may be rotated)
+    const isPortrait = isMobile && window.innerHeight > window.innerWidth;
+    const w = isPortrait ? window.innerHeight : window.innerWidth;
+    const h = isPortrait ? window.innerWidth : window.innerHeight;
     
     for (const t of e.changedTouches) {
-      const tx = t.clientX;
-      const ty = t.clientY;
+      const mapped = this._remapTouch(t.clientX, t.clientY);
+      const tx = mapped.x;
+      const ty = mapped.y;
       
       // Check button hits first
       if (game.state === 'playing') {
@@ -484,11 +512,12 @@ const Touch = {
   _onTouchMove(e) {
     e.preventDefault();
     for (const t of e.changedTouches) {
+      const mapped = this._remapTouch(t.clientX, t.clientY);
       if (this.leftStick.active && t.identifier === this.leftStick.id) {
-        this._updateStick(this.leftStick, t.clientX, t.clientY);
+        this._updateStick(this.leftStick, mapped.x, mapped.y);
       }
       if (this.rightStick.active && t.identifier === this.rightStick.id) {
-        this._updateStick(this.rightStick, t.clientX, t.clientY);
+        this._updateStick(this.rightStick, mapped.x, mapped.y);
       }
     }
   },
