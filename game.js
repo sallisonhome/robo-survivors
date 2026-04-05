@@ -348,6 +348,13 @@ const Touch = {
     canvas.addEventListener('touchend', e => this._onTouchEnd(e), { passive: false });
     canvas.addEventListener('touchcancel', e => this._onTouchEnd(e), { passive: false });
     
+    // Try to lock orientation to landscape (works on Android when fullscreen)
+    try {
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
+      }
+    } catch (e) { /* not supported */ }
+    
     this.resize();
   },
   
