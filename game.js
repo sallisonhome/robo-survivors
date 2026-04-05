@@ -708,6 +708,11 @@ function resumeAudio() {
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
 
+// Mobile browsers require audio resume on user gesture — attach to all interaction events
+['touchstart', 'touchend', 'mousedown', 'keydown'].forEach(evt => {
+  document.addEventListener(evt, resumeAudio, { once: false, passive: true });
+});
+
 // Sound priority system
 let activeSounds = 0;
 const MAX_CONCURRENT_SFX = 12;
