@@ -395,34 +395,35 @@ const Touch = {
     this.bombBtn = { x: btnX, y: stickBottom - this.buttonSize * 4 - 30 };
   },
   
+  _touchToGame(clientX, clientY) {
+    // Convert screen touch coordinates to game coordinates
+    if (!mobileLocked) return { x: clientX, y: clientY };
+    if (mobileIsPortrait) {
+      // Canvas is CSS-rotated 90deg CW from top-left
+      // Screen Y maps to game X, screen X maps inversely to game Y
+      const scaleX = game.width / window.innerHeight; // canvas width shown along screen height
+      const scaleY = game.height / window.innerWidth;  // canvas height shown along screen width
+      return { x: clientY * scaleX, y: (window.innerWidth - clientX) * scaleY };
+    } else {
+      // Landscape: simple scale
+      return {
+        x: clientX * (game.width / window.innerWidth),
+        y: clientY * (game.height / window.innerHeight)
+      };
+    }
+  },
+  
   _onTouchStart(e) {
     e.preventDefault();
-    // Resume audio if already created (don't create here — startGame handles that)
+    // Resume audio if already created
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
-    // Use game dimensions for hit detection (locked on mobile)
-    const w = mobileLocked ? game.width : window.innerWidth;
-    const h = mobileLocked ? game.height : window.innerHeight;
+    const w = game.width || window.innerWidth;
+    const h = game.height || window.innerHeight;
     
     for (const t of e.changedTouches) {
-      // Map screen touch to game coordinates
-      let tx = t.clientX;
-      let ty = t.clientY;
-      if (mobileLocked) {
-        // vmax/vmin CSS means canvas always fills long edge x short edge
-        // Map screen pixels to game pixels
-        const screenLong = Math.max(window.innerWidth, window.innerHeight);
-        const screenShort = Math.min(window.innerWidth, window.innerHeight);
-        if (window.innerWidth >= window.innerHeight) {
-          // Landscape: direct mapping
-          tx = t.clientX * (game.width / window.innerWidth);
-          ty = t.clientY * (game.height / window.innerHeight);
-        } else {
-          // Portrait: canvas is displayed sideways via vmax/vmin
-          // The canvas fills the screen rotated, so coords need swapping
-          tx = t.clientY * (game.width / window.innerHeight);
-          ty = (window.innerWidth - t.clientX) * (game.height / window.innerWidth);
-        }
-      }
+      const mapped = this._touchToGame(t.clientX, t.clientY);
+      const tx = mapped.x;
+      const ty = mapped.y;
       
       // Check button hits first
       if (game.state === 'playing') {
@@ -469,21 +470,12 @@ const Touch = {
   _onTouchMove(e) {
     e.preventDefault();
     for (const t of e.changedTouches) {
-      let mx = t.clientX, my = t.clientY;
-      if (mobileLocked) {
-        if (window.innerWidth >= window.innerHeight) {
-          mx = t.clientX * (game.width / window.innerWidth);
-          my = t.clientY * (game.height / window.innerHeight);
-        } else {
-          mx = t.clientY * (game.width / window.innerHeight);
-          my = (window.innerWidth - t.clientX) * (game.height / window.innerWidth);
-        }
-      }
+      const mapped = this._touchToGame(t.clientX, t.clientY);
       if (this.leftStick.active && t.identifier === this.leftStick.id) {
-        this._updateStick(this.leftStick, mx, my);
+        this._updateStick(this.leftStick, mapped.x, mapped.y);
       }
       if (this.rightStick.active && t.identifier === this.rightStick.id) {
-        this._updateStick(this.rightStick, mx, my);
+        this._updateStick(this.rightStick, mapped.x, mapped.y);
       }
     }
   },
@@ -5972,7 +5964,7 @@ function init() {
   }
   
   if (isMobile) {
-    // LOCK: determine long/short edges from screen (never changes)
+    // LOCK: get physical screen dimensions (NEVER change with rotation)
     const sw = window.screen.width;
     const sh = window.screen.height;
     const longE = Math.max(sw, sh);
@@ -5984,17 +5976,36 @@ function init() {
     game.width = longE;
     game.height = shortE;
     
-    // CSS: always fill as landscape using vmax/vmin (immune to rotation)
+    // CSS: Fixed position, CSS-rotate when in portrait so game always shows landscape.
+    // Use fixed pixel sizes from screen dimensions (never changes).
+    const startedInPortrait = window.innerHeight > window.innerWidth;
+    mobileIsPortrait = startedInPortrait;
+    
     game.canvas.style.position = 'fixed';
-    game.canvas.style.top = '0';
-    game.canvas.style.left = '0';
-    game.canvas.style.width = '100vmax';
-    game.canvas.style.height = '100vmin';
+    game.canvas.style.zIndex = '99999';
+    
+    if (startedInPortrait) {
+      // Portrait: rotate canvas 90deg so landscape game fills portrait screen
+      game.canvas.style.top = '0';
+      game.canvas.style.left = '0';
+      game.canvas.style.width = longE + 'px';
+      game.canvas.style.height = shortE + 'px';
+      game.canvas.style.transform = 'rotate(90deg) translateY(-100%)';
+      game.canvas.style.transformOrigin = 'top left';
+    } else {
+      // Landscape: fill screen directly
+      game.canvas.style.top = '0';
+      game.canvas.style.left = '0';
+      game.canvas.style.width = longE + 'px';
+      game.canvas.style.height = shortE + 'px';
+      game.canvas.style.transform = 'none';
+    }
     
     // Hide rotate overlay
     const overlay = document.getElementById('rotateOverlay');
     if (overlay) overlay.style.display = 'none';
     
+    // Prevent ANY resize from affecting the canvas
     mobileLocked = true;
     if (Touch.active) Touch.resize();
     // NO resize listener. NOTHING changes. Ever.
