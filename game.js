@@ -5635,6 +5635,46 @@ function updateHighScoreEntry(dt) {
   }
 }
 
+// ---- GLOBAL LEADERBOARD API ----
+const LEADERBOARD_API = '/api/scores';
+
+async function fetchGlobalScores() {
+  try {
+    const resp = await fetch(LEADERBOARD_API);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.scores && data.scores.length > 0) {
+      game.highScores = data.scores;
+      // Also cache locally
+      try {
+        const _ls = window['local' + 'Storage'];
+        if (_ls) _ls.setItem('robo_survivors_scores', JSON.stringify(game.highScores));
+      } catch (e) { }
+    }
+  } catch (e) {
+    // API unavailable — use localStorage fallback (already loaded)
+  }
+}
+
+async function submitScoreToAPI(entry) {
+  try {
+    await fetch(LEADERBOARD_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        initials: entry.initials,
+        score: entry.score,
+        wave: entry.wave,
+        level: entry.level,
+      }),
+    });
+    // Refresh the full leaderboard from server
+    await fetchGlobalScores();
+  } catch (e) {
+    // Offline — score saved locally only
+  }
+}
+
 function submitHighScore() {
   const initials = hsEntry.slots.map(i => INITIALS_CHARS[i]).join('');
   const entry = {
@@ -5648,15 +5688,19 @@ function submitHighScore() {
     timestamp: Date.now(),
   };
   
+  // Add locally immediately so the player sees it
   game.highScores.push(entry);
   game.highScores.sort((a, b) => b.score - a.score);
   if (game.highScores.length > 75) game.highScores.length = 75;
   
-  // Try to save (works on Droplet, fails silently in sandbox)
+  // Save to localStorage as backup
   try {
     const _ls = window['local' + 'Storage'];
     if (_ls) _ls.setItem('robo_survivors_scores', JSON.stringify(game.highScores));
   } catch (e) { }
+  
+  // Submit to global leaderboard API (async, non-blocking)
+  submitScoreToAPI(entry);
   
   if (game.player.score > game.sessionHigh) game.sessionHigh = game.player.score;
   
@@ -5852,12 +5896,17 @@ function init() {
   Input.init();
   Touch.init();
   
-  // Try loading high scores (works on Droplet, in-memory only in sandbox)
+  // Load high scores: try global API first, fall back to localStorage
+  fetchGlobalScores();
   try {
     const _ls = window['local' + 'Storage'];
     if (_ls) {
       const saved = _ls.getItem('robo_survivors_scores');
-      if (saved) game.highScores = JSON.parse(saved);
+      if (saved) {
+        const local = JSON.parse(saved);
+        // Merge local scores as fallback (API scores take priority when loaded)
+        if (game.highScores.length === 0) game.highScores = local;
+      }
     }
   } catch (e) { /* sandbox — in memory only */ }
   
@@ -5919,6 +5968,7 @@ function init() {
             game.attractPhase = 1; game.attractTimer = 0; demoInited = false; // -> demo (reinit scene)
           } else if (game.attractPhase === 1 && game.attractTimer > 30) {
             game.attractPhase = 2; game.attractTimer = 0; // -> scores
+            fetchGlobalScores(); // refresh leaderboard from server
           } else if (game.attractPhase === 2 && game.attractTimer > 30) {
             game.attractPhase = 0; game.attractTimer = 0; // -> title
           }
