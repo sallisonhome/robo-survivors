@@ -667,9 +667,9 @@ function updateHeartbeat(dt) {
   if (alive <= 3 && alive > 0) heartbeatRate = Math.min(heartbeatRate, 0.22);
   if (alive <= 1 && alive > 0) heartbeatRate = 0.15;
   
-  // ---- VOLUME: starts subtle, gets louder with urgency ----
-  const vol = lerp(0.12, 0.28, Math.min(1, lossRatio * 1.5));
-  if (alive <= 3 && alive > 0) var urgentVol = 0.32; else urgentVol = vol;
+  // ---- VOLUME: prominent, gets commanding with urgency ----
+  const vol = lerp(0.25, 0.5, Math.min(1, lossRatio * 1.5));
+  if (alive <= 3 && alive > 0) var urgentVol = 0.6; else urgentVol = vol;
   
   // ---- THUMP PAIR TIMING ----
   heartbeatTimer -= dt;
@@ -679,18 +679,18 @@ function updateHeartbeat(dt) {
     heartbeatTimer = heartbeatRate;
     
     // FIRST THUMP (lower, heavier) — the "lub"
-    playTone(80, 0.1, 'square', urgentVol, 40);
-    playTone(60, 0.08, 'sine', urgentVol * 0.7, 30, 0.02);
+    playTone(80, 0.12, 'square', urgentVol, 35);
+    playTone(55, 0.1, 'sine', urgentVol * 0.6, 25, 0.02);
     
     // Schedule second thump
-    heartbeatPairTimer = heartbeatRate * 0.28; // second beat comes quickly after first
+    heartbeatPairTimer = heartbeatRate * 0.28;
     heartbeatPhase = 1;
   }
   
   if (heartbeatPhase === 1 && heartbeatPairTimer <= 0) {
     // SECOND THUMP (slightly higher, shorter) — the "dub"
-    playTone(100, 0.07, 'square', urgentVol * 0.85, 50);
-    playTone(75, 0.06, 'sine', urgentVol * 0.5, 40, 0.015);
+    playTone(100, 0.09, 'square', urgentVol * 0.8, 45);
+    playTone(70, 0.07, 'sine', urgentVol * 0.5, 35, 0.015);
     heartbeatPhase = 0;
   }
 }
@@ -778,7 +778,7 @@ const game = {
     animTimer: 0,
     facing: 0, // angle
     // Leveling
-    xp: 0, level: 1, xpToNext: 5,
+    xp: 0, level: 1, xpToNext: 8, // 40% slower XP curve
     // Scoring
     score: 0,
     rescueCount: 0, // resets per wave
@@ -941,29 +941,7 @@ function updatePlayer(dt) {
     p.x = clamp(p.x, PLAYER_SIZE, WORLD_W - PLAYER_SIZE);
     p.y = clamp(p.y, PLAYER_SIZE, WORLD_H - PLAYER_SIZE);
     
-    // Trigger dash (remappable)
-    if ((Input.gpJust(binds.dash.gp) || Input.wasPressed(binds.dash.key)) && p.dashCooldown <= 0) {
-      // Dash in movement direction, or facing direction if standing still
-      let dx = Input.moveX, dy = Input.moveY;
-      if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
-        dx = Math.cos(p.facing);
-        dy = Math.sin(p.facing);
-      }
-      const mag = Math.hypot(dx, dy);
-      if (mag > 0) {
-        p.dashDirX = dx / mag;
-        p.dashDirY = dy / mag;
-        p.isDashing = true;
-        p.dashTimer = DASH_DURATION;
-        p.dashCooldown = DASH_BASE_COOLDOWN * Math.max(0.3, p.cooldownMulti);
-        p._dashWasCooling = true;
-        p.iframes = DASH_DURATION + 0.05; // invincible during dash
-        SFX.playerDash();
-        // Burst of particles at start
-        emitParticles(p.x, p.y, 8, C.player, 15, 120, 0.3, 3);
-        emitParticles(p.x, p.y, 4, '#ffffff', 10, 80, 0.2, 2);
-      }
-    }
+    // Dash trigger handled per-frame outside fixed timestep for instant response
   }
   
   // Facing
@@ -1369,7 +1347,7 @@ function updateEnemies(dt) {
         // Fire sparks — more aggressive
         e.special.fireTimer -= dt;
         if (e.special.fireTimer <= 0 && d < 500) {
-          fireEnemyBullet(e.x, e.y, p.x, p.y, 320, 10, 'spark');
+          fireEnemyBullet(e.x, e.y, p.x, p.y, 320, 20, 'spark');
           e.special.fireTimer = randF(0.8, 2.0);
           emitParticles(e.x, e.y, 2, C.enforcerSpark, 5, 40, 0.15, 2);
           SFX.enforcerFire();
@@ -1426,7 +1404,7 @@ function updateEnemies(dt) {
         if (e.special.fireTimer <= 0 && d < 600) {
           const b = fireEnemyBullet(e.x, e.y, 
             e.x + Math.cos(e.special.turretAngle) * 100,
-            e.y + Math.sin(e.special.turretAngle) * 100, 280, 12, 'shell');
+            e.y + Math.sin(e.special.turretAngle) * 100, 280, 25, 'shell');
           if (b) { b.maxBounces = 2; b.bounces = 0; }
           e.special.fireTimer = randF(1.8, 3.5);
           SFX.tankFire();
@@ -1472,7 +1450,7 @@ function updateEnemies(dt) {
         // Fire cruise missiles — more aggressively
         e.special.fireTimer -= dt;
         if (e.special.fireTimer <= 0 && d < 700) {
-          fireEnemyBullet(e.x, e.y, p.x, p.y, 200, 15, 'cruise');
+          fireEnemyBullet(e.x, e.y, p.x, p.y, 200, 30, 'cruise');
           e.special.fireTimer = randF(2, 4);
           emitParticles(e.x, e.y, 3, '#ff4466', 8, 50, 0.2, 2);
           SFX.brainMissileLaunch();
@@ -1508,11 +1486,11 @@ function updateEnemies(dt) {
       const contactDist = e.size + PLAYER_SIZE;
       if (dist(e.x, e.y, p.x, p.y) < contactDist) {
         if (e.special.static) {
-          damagePlayer(30); // Electrodes: big damage
+          damagePlayer(60); // Electrodes: devastating
         } else if (e.special.invincible) {
-          damagePlayer(15); // Hulk
+          damagePlayer(30); // Hulk: heavy hit
         } else {
-          damagePlayer(10);
+          damagePlayer(20); // Standard contact
         }
       }
     }
@@ -2412,17 +2390,17 @@ function checkLevelUp() {
     p.xp -= p.xpToNext;
     p.level++;
     
-    // XP curve
+    // XP curve (40% slower than original — prevents early over-leveling)
     if (p.level <= 20) {
-      p.xpToNext = 5 + (p.level - 1) * 10;
+      p.xpToNext = 8 + (p.level - 1) * 14; // was 5 + level*10
     } else if (p.level === 21) {
-      p.xpToNext += 600;
+      p.xpToNext += 840; // was 600
     } else if (p.level <= 40) {
-      p.xpToNext += 13;
+      p.xpToNext += 18; // was 13
     } else if (p.level === 41) {
-      p.xpToNext += 2400;
+      p.xpToNext += 3360; // was 2400
     } else {
-      p.xpToNext += 16;
+      p.xpToNext += 22; // was 16
     }
     
     // Trigger level-up screen
@@ -5117,7 +5095,7 @@ function resetGame() {
   p.hp = PLAYER_MAX_HP; p.maxHp = PLAYER_MAX_HP;
   p.speed = PLAYER_SPEED;
   p.alive = true; p.iframes = 2.0;
-  p.xp = 0; p.level = 1; p.xpToNext = 5;
+  p.xp = 0; p.level = 1; p.xpToNext = 8;
   p.score = 0; p.rescueCount = 0; p.totalRescues = 0; p.totalKills = 0;
   p.fireCooldown = 0; p.facing = 0; p.animFrame = 0; p.animTimer = 0;
   p.dashCooldown = 0; p.isDashing = false; p.dashTimer = 0; p._dashWasCooling = false;
@@ -5258,18 +5236,17 @@ function init() {
           updateHeartbeat(dt);
           updateCamera(dt);
           
-          // Smart bomb bonus: +1 bomb per 500,000 points (checked every frame)
+          // Smart bomb bonus: +1 bomb per 500,000 points
           while (game.player.score >= game.smartBombBonusThreshold) {
             game.smartBombs++;
             game.smartBombBonusThreshold += 500000;
-            spawnFloatingText(game.player.x, game.player.y - 50, '+1 SMART BOMB!', '#ffcc00', 14);
-            SFX.levelUp();
+            spawnFloatingText(game.player.x, game.player.y - 50, 'ADDITIONAL SMART BOMB ACQUIRED', '#ffcc00', 14);
+            spawnFloatingText(game.player.x, game.player.y - 30, `${game.player.score.toLocaleString()} POINTS!`, '#ffffff', 10);
+            if (!playSample('smartbomb_award', 1.0)) SFX.levelUp();
+            game.shakeTimer = 0.15;
+            game.shakeIntensity = 3;
           }
-          
-          // Smart bomb trigger (remappable)
-          if (Input.gpJust(binds.smartbomb.gp) || Input.wasPressed(binds.smartbomb.key)) {
-            triggerSmartBomb();
-          }
+          // Smart bomb and dash triggers moved to per-frame input below
           // Update smart bomb flash
           if (game.smartBombFlash > 0) game.smartBombFlash -= dt;
           
@@ -5326,11 +5303,34 @@ function init() {
       accumulator -= TICK_RATE;
     }
     
-    // Per-frame menu input (outside fixed timestep for snappy 1:1 response)
+    // Per-frame input (outside fixed timestep for snappy 1:1 response)
     const frameDt = delta / 1000;
     if (game.state === 'levelup') updateLevelUpInput(frameDt);
     if (game.state === 'controls') updateControlsMenu(frameDt);
     if (game.state === 'highscore_entry') updateHighScoreEntry(frameDt);
+    // Smart bomb and dash — per-frame for instant response
+    if (game.state === 'playing' && game.player.alive) {
+      if (Input.gpJust(binds.smartbomb.gp) || Input.wasPressed(binds.smartbomb.key)) {
+        triggerSmartBomb();
+      }
+      if ((Input.gpJust(binds.dash.gp) || Input.wasPressed(binds.dash.key)) && game.player.dashCooldown <= 0 && !game.player.isDashing) {
+        // Trigger dash from per-frame input
+        const p = game.player;
+        let dx = Input.moveX, dy = Input.moveY;
+        if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) { dx = Math.cos(p.facing); dy = Math.sin(p.facing); }
+        const mag = Math.hypot(dx, dy);
+        if (mag > 0) {
+          p.dashDirX = dx / mag; p.dashDirY = dy / mag;
+          p.isDashing = true; p.dashTimer = DASH_DURATION;
+          p.dashCooldown = DASH_BASE_COOLDOWN * Math.max(0.3, p.cooldownMulti);
+          p._dashWasCooling = true;
+          p.iframes = DASH_DURATION + 0.05;
+          SFX.playerDash();
+          emitParticles(p.x, p.y, 8, C.player, 15, 120, 0.3, 3);
+          emitParticles(p.x, p.y, 4, '#ffffff', 10, 80, 0.2, 2);
+        }
+      }
+    }
     
     // Always clear input at end of frame
     Input.endFrame();
