@@ -438,10 +438,12 @@ const Touch = {
     this.stickDeadzone = this.stickRadius * 0.15;
     this.buttonSize = Math.min(w, h) * 0.06;
     
-    // Dash button: right side, above right stick area
-    this.dashBtn = { x: w - 80, y: h - 250 };
-    // Bomb button: right side, above dash
-    this.bombBtn = { x: w - 80, y: h - 350 };
+    // Buttons: right side, stacked above the right stick area
+    // Position relative to screen size so they're always visible
+    const btnX = w - this.buttonSize * 2;
+    const stickBottom = h - this.stickRadius - 20;
+    this.dashBtn = { x: btnX, y: stickBottom - this.buttonSize * 2 - 15 };
+    this.bombBtn = { x: btnX, y: stickBottom - this.buttonSize * 4 - 30 };
   },
   
   // Remap touch coords when canvas is CSS-rotated in portrait mode
