@@ -4176,6 +4176,10 @@ function drawAttractDemo(ctx) {
   
   if (!demoInited) initDemoScene();
   
+  // Clear any lingering floating texts/particles from demo actions
+  floatingTexts.length = 0;
+  particles.items.forEach(p2 => { p2.active = false; });
+  
   const dt = 1/60;
   const cx = WORLD_W / 2;
   const cy = WORLD_H / 2;
@@ -4407,7 +4411,12 @@ function drawAttractDemo(ctx) {
   const savePlayer = { ...game.player };
   const saveEnemies = game.enemies;
   const saveHumans = game.humans;
-  const saveBullets = [];
+  
+  // Save and clear floating texts/particles so demo doesn't accumulate them
+  const saveFloatingTexts = floatingTexts.splice(0);
+  const saveParticleStates = [];
+  particles.items.forEach((p2, idx) => { saveParticleStates[idx] = p2.active; });
+  particles.items.forEach(p2 => { p2.active = false; });
   
   game.camX = cx - w / 2;
   game.camY = cy - h / 2;
@@ -4452,6 +4461,11 @@ function drawAttractDemo(ctx) {
   Object.assign(game.player, savePlayer);
   game.enemies = saveEnemies;
   game.humans = saveHumans;
+  
+  // Restore floating texts and particles
+  floatingTexts.length = 0;
+  saveFloatingTexts.forEach(ft => floatingTexts.push(ft));
+  particles.items.forEach((p2, idx) => { p2.active = saveParticleStates[idx] || false; });
   
   // ---- OVERLAY HUD ----
   ctx.fillStyle = '#ffffff';
