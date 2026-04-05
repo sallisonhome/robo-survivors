@@ -3667,26 +3667,57 @@ const stompyVoices = {
     this._playing = true;
     const src = audioCtx.createBufferSource();
     src.buffer = this._samples[sampleKey];
-    // Voice goes through its own gain node at HIGH volume, bypassing sfxGain
+    // Voice bypasses BOTH sfxGain AND masterGain — goes DIRECT to speakers
     const voiceGain = audioCtx.createGain();
     voiceGain.gain.value = volume;
-    src.connect(voiceGain).connect(masterGain);
+    src.connect(voiceGain).connect(audioCtx.destination);
     src.onended = () => { this._playing = false; };
     src.start();
   },
   
+  // Procedural bass impact boom — makes the voice line feel like an event
+  _bassImpact() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    // Sub-bass thud
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(80, t);
+    osc.frequency.exponentialRampToValueAtTime(30, t + 0.3);
+    gain.gain.setValueAtTime(0.8, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.4);
+    // Mid crack
+    const osc2 = audioCtx.createOscillator();
+    const gain2 = audioCtx.createGain();
+    osc2.type = 'sawtooth';
+    osc2.frequency.setValueAtTime(200, t);
+    osc2.frequency.exponentialRampToValueAtTime(60, t + 0.15);
+    gain2.gain.setValueAtTime(0.4, t);
+    gain2.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+    osc2.connect(gain2).connect(audioCtx.destination);
+    osc2.start(t);
+    osc2.stop(t + 0.2);
+  },
+  
   speakActivation() {
     // Duck all game SFX so voice dominates
-    if (sfxGain) sfxGain.gain.value = 0.3;
-    this._play('activated', 3.0); // 3x louder than normal SFX
+    if (sfxGain) sfxGain.gain.value = 0.15;
+    // Bass impact first, then voice
+    this._bassImpact();
+    this._play('activated', 8.0); // 8x volume, direct to destination
   },
   
   speakCallout(text) {
     if (this._playing) return; // don't interrupt
-    if (sfxGain) sfxGain.gain.value = 0.3;
-    // Alternate between stomping and smash
+    if (sfxGain) sfxGain.gain.value = 0.15;
+    // Bass impact + voice
+    this._bassImpact();
     const key = text.includes('Smash') ? 'smash' : 'stomping';
-    this._play(key, 3.0); // 3x louder than normal SFX
+    this._play(key, 8.0); // 8x volume, direct to destination
   },
 };
 
@@ -3701,8 +3732,8 @@ function activateStompy() {
   // Flash
   game.flashTimer = 0.3;
   game.flashColor = '#ffffff';
-  // Duck all game SFX so Stompy voices dominate
-  if (sfxGain) sfxGain.gain.value = 0.3;
+  // Duck all game SFX hard so Stompy voices dominate
+  if (sfxGain) sfxGain.gain.value = 0.15;
   SFX.stompyTransform();
   // "Stompy Activated" — bold female AI voice
   stompyVoices.speakActivation();
