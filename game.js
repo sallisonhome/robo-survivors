@@ -5075,13 +5075,59 @@ function drawAttractDemo(ctx) {
   ctx.font = "9px 'Press Start 2P', monospace";
   ctx.fillText('SURVIVORS: ' + demoHumans.filter(h3 => h3.alive).length, w - 16, 40);
   
+  // ---- HOW TO PLAY INSTRUCTIONS (cycle through during demo) ----
+  const instructions = Touch.active ? [
+    { text: 'SAVE SURVIVORS BY RUNNING OVER THEM', color: '#44ff44' },
+    { text: 'LEFT STICK: MOVE    RIGHT STICK: AIM & SHOOT', color: '#00e5ff' },
+    { text: 'TAP DASH TO EVADE THROUGH ENEMIES', color: '#ffcc00' },
+    { text: 'TAP BOMB TO CLEAR ALL ENEMIES ON SCREEN', color: '#ff4444' },
+    { text: 'EXTRA SMART BOMBS EVERY 500,000 POINTS', color: '#ffcc00' },
+    { text: 'COLLECT XP GEMS TO LEVEL UP & GET WEAPONS', color: '#cc44ff' },
+    { text: 'ALL SURVIVORS LOST = GAME OVER', color: '#ff4444' },
+  ] : Input.gamepad ? [
+    { text: 'SAVE SURVIVORS BY RUNNING OVER THEM', color: '#44ff44' },
+    { text: 'LEFT STICK: MOVE    RIGHT STICK: AIM & SHOOT', color: '#00e5ff' },
+    { text: 'PRESS A TO DASH THROUGH ENEMIES', color: '#ffcc00' },
+    { text: 'PRESS RB FOR SMART BOMB  -  CLEARS ALL ENEMIES', color: '#ff4444' },
+    { text: 'EXTRA SMART BOMBS EVERY 500,000 POINTS', color: '#ffcc00' },
+    { text: 'COLLECT XP GEMS TO LEVEL UP & GET WEAPONS', color: '#cc44ff' },
+    { text: 'ALL SURVIVORS LOST = GAME OVER', color: '#ff4444' },
+  ] : [
+    { text: 'SAVE SURVIVORS BY RUNNING OVER THEM', color: '#44ff44' },
+    { text: 'WASD: MOVE    ARROWS: AIM & SHOOT', color: '#00e5ff' },
+    { text: 'SHIFT TO DASH THROUGH ENEMIES', color: '#ffcc00' },
+    { text: 'SPACE FOR SMART BOMB  -  CLEARS ALL ENEMIES', color: '#ff4444' },
+    { text: 'EXTRA SMART BOMBS EVERY 500,000 POINTS', color: '#ffcc00' },
+    { text: 'COLLECT XP GEMS TO LEVEL UP & GET WEAPONS', color: '#cc44ff' },
+    { text: 'ALL SURVIVORS LOST = GAME OVER', color: '#ff4444' },
+  ];
+  
+  const instrDuration = 3.5; // seconds per instruction
+  const instrIndex = Math.floor(t / instrDuration) % instructions.length;
+  const instrProgress = (t % instrDuration) / instrDuration;
+  // Fade in for first 15%, hold, fade out for last 15%
+  let instrAlpha = 1;
+  if (instrProgress < 0.15) instrAlpha = instrProgress / 0.15;
+  else if (instrProgress > 0.85) instrAlpha = (1 - instrProgress) / 0.15;
+  
+  const instr = instructions[instrIndex];
+  ctx.textAlign = 'center';
+  ctx.globalAlpha = instrAlpha * 0.9;
+  ctx.fillStyle = instr.color;
+  ctx.font = "bold 11px 'Press Start 2P', monospace";
+  ctx.shadowColor = instr.color;
+  ctx.shadowBlur = 8;
+  ctx.fillText(instr.text, w / 2, h * 0.15);
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+  
   // Press start (pulsing)
   ctx.textAlign = 'center';
   const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.5;
   ctx.globalAlpha = pressAlpha;
   ctx.fillStyle = C.textWhite;
   ctx.font = "14px 'Press Start 2P', monospace";
-  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h - 40);
+  ctx.fillText(Touch.active ? 'TAP TO START' : (Input.gamepad ? 'PRESS START' : 'PRESS ENTER'), w / 2, h - 40);
   ctx.globalAlpha = 1;
 }
 
