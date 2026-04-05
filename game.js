@@ -753,7 +753,7 @@ function spawnFloatingText(x, y, text, color, size) {
 // ============================================================================
 
 const game = {
-  state: 'title', // 'title', 'playing', 'paused', 'levelup', 'gameover', 'attract_demo', 'attract_scores'
+  state: 'title', // 'title', 'playing', 'paused', 'levelup', 'gameover', 'postgame_scores', 'attract_demo', 'attract_scores'
   canvas: null,
   ctx: null,
   width: 0,
@@ -3301,10 +3301,12 @@ const stompyVoices = {
     if (typeof speechSynthesis === 'undefined') return;
     this._loadVoices();
     speechSynthesis.cancel(); // clear any pending
+    // Temporarily boost SFX gain for Stompy voices — 40% louder than everything else
+    if (sfxGain) sfxGain.gain.value = 1.4;
     const u = new SpeechSynthesisUtterance('Stompy Activated');
     u.rate = 1.1;  // slightly fast — confident
     u.pitch = 1.4; // higher pitch — female AI computer
-    u.volume = 0.9;
+    u.volume = 1.0; // max volume
     if (this._femaleVoice) u.voice = this._femaleVoice;
     speechSynthesis.speak(u);
   },
@@ -3314,10 +3316,12 @@ const stompyVoices = {
     this._loadVoices();
     // Don't interrupt activation announcement
     if (speechSynthesis.speaking) return;
+    // Boost SFX gain for Stompy voices — 40% louder than everything else
+    if (sfxGain) sfxGain.gain.value = 1.4;
     const u = new SpeechSynthesisUtterance(text);
     u.rate = 0.8;  // slower — powerful, ominous
     u.pitch = 0.3; // very low pitch — deep robotic male
-    u.volume = 0.8;
+    u.volume = 1.0; // max volume
     if (this._maleVoice) u.voice = this._maleVoice;
     speechSynthesis.speak(u);
   },
@@ -3377,6 +3381,9 @@ function updateStompy(dt) {
       // Kill everything, even Hulks
       e.hp = 0;
       killEnemy(e, i);
+      // Satisfying screen shake on each Stompy kill
+      game.shakeTimer = Math.max(game.shakeTimer, 0.1);
+      game.shakeIntensity = Math.max(game.shakeIntensity, 3);
     }
   }
   
@@ -3392,8 +3399,9 @@ function updateStompy(dt) {
     stompyActive = false;
     game.camZoom = 1.0;
     game.player.iframes = 3.0; // Grace period
-    // Cancel any pending speech
+    // Cancel any pending speech and restore normal SFX volume
     if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+    if (sfxGain) sfxGain.gain.value = 1.0;
   }
 }
 
@@ -3601,8 +3609,8 @@ function startNextWave() {
   if (isNewCycle) {
     // Fresh batch
     game.humans = [];
-    game.cycleSurvivorCount = 20; // Fixed 20 survivors per 5-wave cycle — never increases
-    spawnHumans(20);
+    game.cycleSurvivorCount = 15; // Fixed 15 survivors per 5-wave cycle — never increases
+    spawnHumans(15);
     game.cycleSurvivorCount = game.humans.length; // actual spawned (may be less due to position conflicts)
   } else {
     // Carry-over: the survivors from last wave = cycleSurvivorCount - total killed across this cycle
@@ -4779,14 +4787,16 @@ function drawAttractScores(ctx) {
   ctx.moveTo(colW * 2, headerY - 20); ctx.lineTo(colW * 2, h * 0.92);
   ctx.stroke();
   
-  // Press start
-  ctx.textAlign = 'center';
-  const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.5;
-  ctx.globalAlpha = pressAlpha;
-  ctx.fillStyle = C.textWhite;
-  ctx.font = "24px 'Press Start 2P', monospace";
-  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.96);
-  ctx.globalAlpha = 1;
+  // Press start (skip if postgame_scores state — it draws its own prompt)
+  if (game.state !== 'postgame_scores') {
+    ctx.textAlign = 'center';
+    const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.5;
+    ctx.globalAlpha = pressAlpha;
+    ctx.fillStyle = C.textWhite;
+    ctx.font = "24px 'Press Start 2P', monospace";
+    ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.96);
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawGameOver(ctx) {
@@ -5194,10 +5204,10 @@ function submitHighScore() {
   if (game.player.score > game.sessionHigh) game.sessionHigh = game.player.score;
   
   hsEntry.active = false;
-  game.state = 'gameover';
-  // Timer carries over from high score entry — no reset
-  // If player was fast, they get remaining time on game over screen
-  // If timer already hit 0, gameover will immediately transition to attract
+  // Go directly to the high score table for 20 seconds
+  game.state = 'postgame_scores';
+  game.postgameTimer = 20;
+  game.attractTimer = 0; // reset for row animation
   SFX.menuConfirm();
 }
 
@@ -5347,6 +5357,7 @@ function resetGame() {
   stompyVoiceTimer = 0;
   stompyVoiceIndex = 0;
   if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+  if (sfxGain) sfxGain.gain.value = 1.0; // restore normal SFX volume
   game.camZoom = 1.0;
   resetWeaponState();
   
@@ -5533,10 +5544,10 @@ function init() {
             game.titleMenuSelection = 0;
             break;
           }
-          // 20 second arcade countdown to attract mode
+          // When timer runs out, go to high score table view
           if (game.attractReturnTimer <= 0) {
-            game.state = 'title';
-            game.attractPhase = 0;
+            game.state = 'postgame_scores';
+            game.postgameTimer = 20;
             game.attractTimer = 0;
           }
           // Tick sound at each second for last 10 seconds
@@ -5548,10 +5559,32 @@ function init() {
             }
           }
           break;
+          
+        case 'postgame_scores':
+          game.attractTimer += dt;
+          game.postgameTimer -= dt;
+          // Start pressed = play again immediately
+          if (Input.startPressed() || Input.confirmPressed()) { startGame(); break; }
+          // Back button = return to title
+          if (Input.backPressed()) {
+            game.state = 'title';
+            game.attractPhase = 0;
+            game.attractTimer = 0;
+            game.titleMenuSelection = 0;
+            break;
+          }
+          // After 20 seconds, return to title
+          if (game.postgameTimer <= 0) {
+            game.state = 'title';
+            game.attractPhase = 0;
+            game.attractTimer = 0;
+            game.titleMenuSelection = 0;
+          }
+          break;
       }
       
       // Only clear per-tick input flags during gameplay states
-      if (game.state === 'playing' || game.state === 'paused' || game.state === 'title' || game.state === 'gameover') {
+      if (game.state === 'playing' || game.state === 'paused' || game.state === 'title' || game.state === 'gameover' || game.state === 'postgame_scores') {
         Input.endFrame();
       }
       accumulator -= TICK_RATE;
@@ -5634,6 +5667,17 @@ function init() {
       case 'gameover':
         drawWorld(ctx);
         drawGameOver(ctx);
+        break;
+        
+      case 'postgame_scores':
+        drawAttractScores(ctx);
+        // Override the "PRESS START/ENTER" text with "PRESS START TO PLAY AGAIN"
+        ctx.textAlign = 'center';
+        ctx.fillStyle = C.textWhite;
+        ctx.globalAlpha = 0.3 + Math.sin(game.attractTimer * Math.PI) * 0.5;
+        ctx.font = "24px 'Press Start 2P', monospace";
+        ctx.fillText(Input.gamepad ? 'PRESS START TO PLAY AGAIN' : 'PRESS ENTER TO PLAY AGAIN', game.width / 2, game.height * 0.96);
+        ctx.globalAlpha = 1;
         break;
     }
     
