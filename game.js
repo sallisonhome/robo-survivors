@@ -3240,13 +3240,8 @@ game.smartBombNextAward = 5; // next wave to award bombs
 game.smartBombBonusThreshold = 500000; // next score threshold for bonus bomb
 
 function awardSmartBombs() {
-  // Award 2 bombs every 5 waves, +1 per 500k points scored
+  // Award 2 bombs every 5 waves (score-based bonuses handled in game loop with on-screen feedback)
   game.smartBombs += 2;
-  // Check score bonuses
-  while (game.player.score >= game.smartBombBonusThreshold) {
-    game.smartBombs++;
-    game.smartBombBonusThreshold += 500000;
-  }
 }
 
 function triggerSmartBomb() {
@@ -5278,14 +5273,23 @@ function init() {
           updateCamera(dt);
           
           // Smart bomb bonus: +1 bomb per 500,000 points
-          while (game.player.score >= game.smartBombBonusThreshold) {
+          if (game.player.score >= game.smartBombBonusThreshold) {
             game.smartBombs++;
             game.smartBombBonusThreshold += 500000;
-            spawnFloatingText(game.player.x, game.player.y - 50, 'ADDITIONAL SMART BOMB ACQUIRED', '#ffcc00', 14);
-            spawnFloatingText(game.player.x, game.player.y - 30, `${game.player.score.toLocaleString()} POINTS!`, '#ffffff', 10);
+            // BIG on-screen notification the player can't miss
+            spawnFloatingText(game.player.x, game.player.y - 60, 'ADDITIONAL SMART BOMB ACQUIRED', '#ffcc00', 16);
+            spawnFloatingText(game.player.x, game.player.y - 35, `${(game.smartBombBonusThreshold - 500000).toLocaleString()} POINTS!`, '#ffffff', 11);
+            spawnFloatingText(game.player.x, game.player.y - 15, `BOMBS: ${game.smartBombs}`, '#ffcc00', 12);
+            // Play the Defender WAV award sound
             if (!playSample('smartbomb_award', 1.0)) SFX.levelUp();
-            game.shakeTimer = 0.15;
-            game.shakeIntensity = 3;
+            // Screen flash gold + shake
+            game.flashTimer = 0.2;
+            game.flashColor = '#ffcc0044';
+            game.shakeTimer = 0.2;
+            game.shakeIntensity = 4;
+            // Big particle burst
+            emitParticles(game.player.x, game.player.y, 15, '#ffcc00', 20, 150, 0.6, 4);
+            emitParticles(game.player.x, game.player.y, 8, '#ffffff', 15, 100, 0.4, 3);
           }
           // Smart bomb and dash triggers moved to per-frame input below
           // Update smart bomb flash
