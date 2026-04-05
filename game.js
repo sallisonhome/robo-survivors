@@ -457,6 +457,8 @@ const Touch = {
   
   _onTouchStart(e) {
     e.preventDefault();
+    // CRITICAL: Resume/create audio on touch — iOS requires this inside the gesture handler
+    resumeAudio();
     // Use game-space dimensions (may be rotated)
     const isPortrait = isMobile && window.innerHeight > window.innerWidth;
     const w = isPortrait ? window.innerHeight : window.innerWidth;
@@ -4516,10 +4518,11 @@ function drawLevelUpUI(ctx) {
   ctx.fillStyle = C.textWhite;
   ctx.fillText(`Level ${game.player.level}`, w / 2, 110);
   
-  // Cards
-  const cardW = 220;
-  const cardH = 120;
-  const gap = 20;
+  // Cards — responsive sizing for mobile
+  const maxCardW = isMobile ? Math.floor((w - 40) / levelUpOptions.length - 10) : 220;
+  const cardW = Math.min(220, maxCardW);
+  const cardH = isMobile ? Math.min(120, h * 0.35) : 120;
+  const gap = isMobile ? 8 : 20;
   const totalW = levelUpOptions.length * cardW + (levelUpOptions.length - 1) * gap;
   const startX = (w - totalW) / 2;
   const cardY = h / 2 - cardH / 2;
@@ -4545,21 +4548,26 @@ function drawLevelUpUI(ctx) {
     ctx.textAlign = 'center';
     const midX = cx + cardW / 2;
     
+    // Scale font sizes for mobile
+    const nameSize = isMobile ? Math.max(7, Math.floor(cardW / 22)) : 10;
+    const lvSize = isMobile ? Math.max(6, nameSize - 2) : 8;
+    const descSize = isMobile ? Math.max(5, nameSize - 3) : 7;
+    
     // Name
     ctx.fillStyle = opt.legendary ? '#ffcc00' : C.textWhite;
-    ctx.font = "bold 10px 'Press Start 2P', monospace";
+    ctx.font = `bold ${nameSize}px 'Press Start 2P', monospace`;
     ctx.fillText(opt.name, midX, cardY + 25);
     
     // Level
     if (opt.level > 0 && !opt.legendary) {
       ctx.fillStyle = opt.isNew ? '#44ff44' : C.textYellow;
-      ctx.font = "8px 'Press Start 2P', monospace";
+      ctx.font = `${lvSize}px 'Press Start 2P', monospace`;
       ctx.fillText(opt.isNew ? 'NEW' : `Lv ${opt.level}`, midX, cardY + 42);
     }
     
     // Description
     ctx.fillStyle = '#aaaaaa';
-    ctx.font = "7px 'Press Start 2P', monospace";
+    ctx.font = `${descSize}px 'Press Start 2P', monospace`;
     // Word wrap description
     const words = opt.desc.split(' ');
     let line = '';
@@ -4596,9 +4604,10 @@ function updateLevelUpInput(frameDt) {
   if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
     const w = game.width;
     const h = game.height;
-    const cardW = 220;
-    const cardH = 120;
-    const gap = 20;
+    const maxCardW = Math.floor((w - 40) / levelUpOptions.length - 10);
+    const cardW = Math.min(220, maxCardW);
+    const cardH = Math.min(120, h * 0.35);
+    const gap = 8;
     const totalW = levelUpOptions.length * cardW + (levelUpOptions.length - 1) * gap;
     const startX = (w - totalW) / 2;
     const cardY = h / 2 - cardH / 2;
@@ -4609,6 +4618,11 @@ function updateLevelUpInput(frameDt) {
         selectLevelUpOption(levelUpOptions[i]);
         return;
       }
+    }
+    // Fallback: tap anywhere on the screen selects the middle card
+    if (Touch.consumeTap(0, 0, w, h)) {
+      selectLevelUpOption(levelUpOptions[Math.min(1, levelUpOptions.length - 1)]);
+      return;
     }
   }
   
