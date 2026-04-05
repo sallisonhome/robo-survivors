@@ -8,6 +8,14 @@ html, body {
   background: #000;
   font-family: 'Press Start 2P', monospace;
   -webkit-font-smoothing: antialiased;
+  /* Prevent mobile browser gestures */
+  touch-action: none;
+  overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  /* iOS safe area support */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 canvas {

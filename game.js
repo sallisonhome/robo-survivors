@@ -244,6 +244,18 @@ const Input = {
       if (aMag > 1) { ax /= aMag; ay /= aMag; }
     }
 
+    // Merge touch input
+    if (Touch.active) {
+      if (Touch.leftStick.active) {
+        mx = Touch.leftStick.x;
+        my = Touch.leftStick.y;
+      }
+      if (Touch.rightStick.active) {
+        ax = Touch.rightStick.x;
+        ay = Touch.rightStick.y;
+      }
+    }
+    
     this.moveX = mx;
     this.moveY = my;
     this.aimX = ax;
@@ -275,14 +287,275 @@ const Input = {
   wasPressed(code) { return !!this.justPressed[code]; },
   gpJust(index) { return this.gpButtonsJust[index]; },
   gpDown(index) { return this.gpButtons[index]; },
-  startPressed() { return this.gpJust(9) || this.wasPressed('Enter'); },
-  confirmPressed() { return this.gpJust(0) || this.wasPressed('Enter'); },
-  backPressed() { return this.gpJust(1) || this.wasPressed('Backspace') || this.wasPressed('Escape'); },
+  startPressed() { return this.gpJust(9) || this.wasPressed('Enter') || Touch.startJust; },
+  confirmPressed() { return this.gpJust(0) || this.wasPressed('Enter') || Touch.confirmJust; },
+  backPressed() { return this.gpJust(1) || this.wasPressed('Backspace') || this.wasPressed('Escape') || Touch.backJust; },
   // Menu navigation: d-pad OR left stick flick
   menuLeft() { return this.gpJust(14) || this.wasPressed('ArrowLeft') || this._stickFlickX < 0; },
   menuRight() { return this.gpJust(15) || this.wasPressed('ArrowRight') || this._stickFlickX > 0; },
   menuUp() { return this.gpJust(12) || this.wasPressed('ArrowUp') || this._stickFlickY < 0; },
   menuDown() { return this.gpJust(13) || this.wasPressed('ArrowDown') || this._stickFlickY > 0; },
+};
+
+// ============================================================================
+// 5b. MOBILE TOUCH CONTROLS
+// ============================================================================
+
+// Detect mobile/tablet: covers Android, iPhone, iPad (including iPadOS which spoofs Mac UA),
+// Surface tablets, and any touch-primary device
+const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+  (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent)) || // iPadOS spoofs Mac
+  (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches);
+
+const Touch = {
+  active: false,
+  // Virtual stick state
+  leftStick: { active: false, id: null, startX: 0, startY: 0, x: 0, y: 0 },
+  rightStick: { active: false, id: null, startX: 0, startY: 0, x: 0, y: 0 },
+  // Button state
+  dashPressed: false,
+  bombPressed: false,
+  // Tap state for menus
+  tapX: -1, tapY: -1,
+  tapConsumed: false,
+  // Just-pressed flags (cleared each frame)
+  dashJust: false,
+  bombJust: false,
+  startJust: false,
+  confirmJust: false,
+  backJust: false,
+  menuUpJust: false,
+  menuDownJust: false,
+  menuLeftJust: false,
+  menuRightJust: false,
+  
+  // Layout constants (set on resize)
+  stickRadius: 50,
+  stickDeadzone: 8,
+  buttonSize: 40,
+  
+  // Button positions (calculated on resize)
+  dashBtn: { x: 0, y: 0 },
+  bombBtn: { x: 0, y: 0 },
+  
+  init() {
+    if (!isMobile) return;
+    this.active = true;
+    
+    const canvas = document.getElementById('gameCanvas');
+    canvas.addEventListener('touchstart', e => this._onTouchStart(e), { passive: false });
+    canvas.addEventListener('touchmove', e => this._onTouchMove(e), { passive: false });
+    canvas.addEventListener('touchend', e => this._onTouchEnd(e), { passive: false });
+    canvas.addEventListener('touchcancel', e => this._onTouchEnd(e), { passive: false });
+    
+    this.resize();
+  },
+  
+  resize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    // Scale stick size to screen
+    this.stickRadius = Math.min(w, h) * 0.08;
+    this.stickDeadzone = this.stickRadius * 0.15;
+    this.buttonSize = Math.min(w, h) * 0.06;
+    
+    // Dash button: right side, above right stick area
+    this.dashBtn = { x: w - 80, y: h - 250 };
+    // Bomb button: right side, above dash
+    this.bombBtn = { x: w - 80, y: h - 350 };
+  },
+  
+  _onTouchStart(e) {
+    e.preventDefault();
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    
+    for (const t of e.changedTouches) {
+      const tx = t.clientX;
+      const ty = t.clientY;
+      
+      // Check button hits first
+      if (game.state === 'playing') {
+        if (this._hitButton(tx, ty, this.dashBtn)) {
+          this.dashJust = true;
+          this.dashPressed = true;
+          continue;
+        }
+        if (this._hitButton(tx, ty, this.bombBtn)) {
+          this.bombJust = true;
+          this.bombPressed = true;
+          continue;
+        }
+      }
+      
+      // Left half = movement stick, right half = aim stick
+      if (tx < w * 0.4) {
+        if (!this.leftStick.active) {
+          this.leftStick.active = true;
+          this.leftStick.id = t.identifier;
+          this.leftStick.startX = tx;
+          this.leftStick.startY = ty;
+          this.leftStick.x = 0;
+          this.leftStick.y = 0;
+        }
+      } else if (tx > w * 0.6) {
+        if (!this.rightStick.active) {
+          this.rightStick.active = true;
+          this.rightStick.id = t.identifier;
+          this.rightStick.startX = tx;
+          this.rightStick.startY = ty;
+          this.rightStick.x = 0;
+          this.rightStick.y = 0;
+        }
+      }
+      
+      // Store tap position for menu interaction
+      this.tapX = tx;
+      this.tapY = ty;
+      this.tapConsumed = false;
+    }
+  },
+  
+  _onTouchMove(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (this.leftStick.active && t.identifier === this.leftStick.id) {
+        this._updateStick(this.leftStick, t.clientX, t.clientY);
+      }
+      if (this.rightStick.active && t.identifier === this.rightStick.id) {
+        this._updateStick(this.rightStick, t.clientX, t.clientY);
+      }
+    }
+  },
+  
+  _onTouchEnd(e) {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (this.leftStick.active && t.identifier === this.leftStick.id) {
+        this.leftStick.active = false;
+        this.leftStick.x = 0;
+        this.leftStick.y = 0;
+      }
+      if (this.rightStick.active && t.identifier === this.rightStick.id) {
+        this.rightStick.active = false;
+        this.rightStick.x = 0;
+        this.rightStick.y = 0;
+      }
+      this.dashPressed = false;
+      this.bombPressed = false;
+    }
+  },
+  
+  _updateStick(stick, tx, ty) {
+    let dx = tx - stick.startX;
+    let dy = ty - stick.startY;
+    const dist = Math.hypot(dx, dy);
+    const maxDist = this.stickRadius * 1.5;
+    if (dist > maxDist) {
+      dx = dx / dist * maxDist;
+      dy = dy / dist * maxDist;
+    }
+    if (dist < this.stickDeadzone) {
+      stick.x = 0;
+      stick.y = 0;
+    } else {
+      stick.x = dx / maxDist;
+      stick.y = dy / maxDist;
+    }
+  },
+  
+  _hitButton(tx, ty, btn) {
+    const r = this.buttonSize * 1.5; // generous hit area
+    return Math.hypot(tx - btn.x, ty - btn.y) < r;
+  },
+  
+  // Consume a tap if it's within a rectangle (for menus)
+  consumeTap(x, y, w, h) {
+    if (this.tapConsumed || this.tapX < 0) return false;
+    if (this.tapX >= x && this.tapX <= x + w && this.tapY >= y && this.tapY <= y + h) {
+      this.tapConsumed = true;
+      return true;
+    }
+    return false;
+  },
+  
+  endFrame() {
+    this.dashJust = false;
+    this.bombJust = false;
+    this.startJust = false;
+    this.confirmJust = false;
+    this.backJust = false;
+    this.menuUpJust = false;
+    this.menuDownJust = false;
+    this.menuLeftJust = false;
+    this.menuRightJust = false;
+    this.tapX = -1;
+    this.tapY = -1;
+    this.tapConsumed = false;
+  },
+  
+  // Draw transparent touch controls overlay
+  draw(ctx) {
+    if (!this.active) return;
+    const state = game.state;
+    
+    if (state === 'playing') {
+      this._drawStick(ctx, this.leftStick, 120, game.height - 140);
+      this._drawStick(ctx, this.rightStick, game.width - 120, game.height - 140);
+      this._drawButton(ctx, this.dashBtn, 'DASH', this.dashPressed, game.player.dashCooldown <= 0 ? '#ffcc00' : '#666666');
+      this._drawButton(ctx, this.bombBtn, 'BOMB', this.bombPressed, game.smartBombs > 0 ? '#ff4444' : '#666666');
+    }
+  },
+  
+  _drawStick(ctx, stick, defaultX, defaultY) {
+    const cx = stick.active ? stick.startX : defaultX;
+    const cy = stick.active ? stick.startY : defaultY;
+    const r = this.stickRadius;
+    
+    // Outer ring
+    ctx.save();
+    ctx.globalAlpha = 0.2;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fill();
+    
+    // Inner thumb
+    const thumbX = cx + stick.x * r * 1.5;
+    const thumbY = cy + stick.y * r * 1.5;
+    ctx.globalAlpha = stick.active ? 0.5 : 0.25;
+    ctx.fillStyle = '#00e5ff';
+    ctx.beginPath();
+    ctx.arc(thumbX, thumbY, r * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  },
+  
+  _drawButton(ctx, btn, label, pressed, color) {
+    const r = this.buttonSize;
+    ctx.save();
+    ctx.globalAlpha = pressed ? 0.6 : 0.3;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(btn.x, btn.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = pressed ? 0.8 : 0.4;
+    ctx.stroke();
+    
+    // Label
+    ctx.globalAlpha = pressed ? 0.9 : 0.5;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = `bold ${Math.max(10, r * 0.4)}px 'Press Start 2P', monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(label, btn.x, btn.y);
+    ctx.restore();
+  },
 };
 
 // ============================================================================
@@ -3919,7 +4192,7 @@ function drawHUD(ctx) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffcc00';
     ctx.font = "8px 'Press Start 2P', monospace";
-    ctx.fillText(`BOMBS: ${game.smartBombs}  [${Input.gamepad ? 'RB' : 'SPACE'}]`, w / 2, xpY - 4);
+    ctx.fillText(`BOMBS: ${game.smartBombs}  ${Touch.active ? '' : '[' + (Input.gamepad ? 'RB' : 'SPACE') + ']'}`, w / 2, xpY - 4);
     // Bomb icons
     for (let i = 0; i < Math.min(game.smartBombs, 10); i++) {
       ctx.fillStyle = '#ffcc00';
@@ -3936,7 +4209,7 @@ function drawHUD(ctx) {
   ctx.font = "7px 'Press Start 2P', monospace";
   if (p.dashCooldown <= 0) {
     ctx.fillStyle = '#00e5ff';
-    ctx.fillText(`DASH READY [${Input.gamepad ? 'A' : 'SHIFT'}]`, 16, hpY - 18);
+    ctx.fillText(`DASH READY ${Touch.active ? '' : '[' + (Input.gamepad ? 'A' : 'SHIFT') + ']'}`, 16, hpY - 18);
   } else {
     ctx.fillStyle = '#555555';
     const cdPct = Math.ceil((p.dashCooldown / (DASH_BASE_COOLDOWN * Math.max(0.3, p.cooldownMulti))) * 100);
@@ -4180,7 +4453,7 @@ function drawLevelUpUI(ctx) {
   ctx.fillStyle = '#666666';
   ctx.font = "8px 'Press Start 2P', monospace";
   ctx.textAlign = 'center';
-  ctx.fillText(Input.gamepad ? 'STICK/D-PAD: SELECT    A: CONFIRM' : 'ARROWS: SELECT    ENTER: CONFIRM', w / 2, h - 50);
+  ctx.fillText(Touch.active ? 'TAP A CARD TO SELECT' : (Input.gamepad ? 'STICK/D-PAD: SELECT    A: CONFIRM' : 'ARROWS: SELECT    ENTER: CONFIRM'), w / 2, h - 50);
 }
 
 // Called ONCE per frame, OUTSIDE the fixed timestep loop
@@ -4189,6 +4462,26 @@ function updateLevelUpInput(frameDt) {
   if (game._levelUpInputDelay > 0) {
     game._levelUpInputDelay -= frameDt;
     return;
+  }
+  
+  // Touch: tap on a level-up card to select it
+  if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+    const w = game.width;
+    const h = game.height;
+    const cardW = 220;
+    const cardH = 120;
+    const gap = 20;
+    const totalW = levelUpOptions.length * cardW + (levelUpOptions.length - 1) * gap;
+    const startX = (w - totalW) / 2;
+    const cardY = h / 2 - cardH / 2;
+    
+    for (let i = 0; i < levelUpOptions.length; i++) {
+      const cx = startX + i * (cardW + gap);
+      if (Touch.consumeTap(cx, cardY, cardW, cardH)) {
+        selectLevelUpOption(levelUpOptions[i]);
+        return;
+      }
+    }
   }
   
   // Navigate with D-pad, left stick, OR arrow keys
@@ -4206,6 +4499,7 @@ function updateLevelUpInput(frameDt) {
     selectLevelUpOption(levelUpOptions[levelUpSelection]);
   }
 }
+
 
 // ============================================================================
 // 21. TITLE SCREEN & ATTRACT MODE
@@ -4277,7 +4571,7 @@ function drawTitleScreen(ctx) {
   // Controls hint
   ctx.fillStyle = '#444444';
   ctx.font = "7px 'Press Start 2P', monospace";
-  ctx.fillText(Input.gamepad ? 'D-PAD/STICK: SELECT    A: CONFIRM' : 'UP/DOWN: SELECT    ENTER: CONFIRM', w / 2, menuY + menuItems.length * 30 + 20);
+  ctx.fillText(Touch.active ? 'TAP SCREEN TO START' : (Input.gamepad ? 'D-PAD/STICK: SELECT    A: CONFIRM' : 'UP/DOWN: SELECT    ENTER: CONFIRM'), w / 2, menuY + menuItems.length * 30 + 20);
   
   // Subtitle
   ctx.fillStyle = '#555555';
@@ -5387,11 +5681,13 @@ function init() {
     game.canvas.height = window.innerHeight;
     game.width = game.canvas.width;
     game.height = game.canvas.height;
+    if (Touch.active) Touch.resize();
   }
   resize();
   window.addEventListener('resize', resize);
   
   Input.init();
+  Touch.init();
   
   // Try loading high scores (works on Droplet, in-memory only in sandbox)
   try {
@@ -5430,6 +5726,11 @@ function init() {
           game.attractTimer += dt;
           // Title menu navigation (only during phase 0 = title screen)
           if (game.attractPhase === 0) {
+            // Touch: tap anywhere on title screen to start
+            if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+              Touch.tapConsumed = true;
+              startGame(); break;
+            }
             if (Input.menuUp()) { game.titleMenuSelection = 0; SFX.menuNav(); game.attractTimer = 3; }
             if (Input.menuDown()) { game.titleMenuSelection = 1; SFX.menuNav(); game.attractTimer = 3; }
             if (Input.confirmPressed() || Input.startPressed()) {
@@ -5443,8 +5744,12 @@ function init() {
               }
             }
           } else {
-            // During demo/scores phases, start pressed begins game
+            // During demo/scores phases, start pressed or tap begins game
             if (Input.startPressed()) { startGame(); break; }
+            if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+              Touch.tapConsumed = true;
+              startGame(); break;
+            }
           }
           // Attract mode cycle: title 60s -> demo 30s -> scores 30s -> title
           if (game.attractPhase === 0 && game.attractTimer > 60) {
@@ -5526,6 +5831,11 @@ function init() {
           if (Input.startPressed() || Input.wasPressed('Escape')) {
             game.state = 'playing';
           }
+          // Touch: tap to resume
+          if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+            Touch.tapConsumed = true;
+            game.state = 'playing';
+          }
           break;
           
         case 'levelup':
@@ -5536,6 +5846,11 @@ function init() {
           game.attractTimer += dt;
           game.attractReturnTimer -= dt;
           if (Input.startPressed()) { startGame(); break; }
+          // Touch: tap to play again
+          if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+            Touch.tapConsumed = true;
+            startGame(); break;
+          }
           // B button or Escape to return to main menu
           if (Input.backPressed()) {
             game.state = 'title';
@@ -5565,6 +5880,11 @@ function init() {
           game.postgameTimer -= dt;
           // Start pressed = play again immediately
           if (Input.startPressed() || Input.confirmPressed()) { startGame(); break; }
+          // Touch: tap to play again
+          if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+            Touch.tapConsumed = true;
+            startGame(); break;
+          }
           // Back button = return to title
           if (Input.backPressed()) {
             game.state = 'title';
@@ -5597,10 +5917,10 @@ function init() {
     if (game.state === 'highscore_entry') updateHighScoreEntry(frameDt);
     // Smart bomb and dash — per-frame for instant response
     if (game.state === 'playing' && game.player.alive) {
-      if (Input.gpJust(binds.smartbomb.gp) || Input.wasPressed(binds.smartbomb.key)) {
+      if (Input.gpJust(binds.smartbomb.gp) || Input.wasPressed(binds.smartbomb.key) || Touch.bombJust) {
         triggerSmartBomb();
       }
-      if ((Input.gpJust(binds.dash.gp) || Input.wasPressed(binds.dash.key)) && game.player.dashCooldown <= 0 && !game.player.isDashing) {
+      if ((Input.gpJust(binds.dash.gp) || Input.wasPressed(binds.dash.key) || Touch.dashJust) && game.player.dashCooldown <= 0 && !game.player.isDashing) {
         // Trigger dash from per-frame input
         const p = game.player;
         let dx = Input.moveX, dy = Input.moveY;
@@ -5621,6 +5941,7 @@ function init() {
     
     // Always clear input at end of frame
     Input.endFrame();
+    Touch.endFrame();
     
     // Render
     const ctx = game.ctx;
@@ -5679,6 +6000,14 @@ function init() {
         ctx.fillText(Input.gamepad ? 'PRESS START TO PLAY AGAIN' : 'PRESS ENTER TO PLAY AGAIN', game.width / 2, game.height * 0.96);
         ctx.globalAlpha = 1;
         break;
+    }
+    
+    // Touch controls overlay (drawn in screen space, not world space)
+    if (Touch.active) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // reset any camera transforms
+      Touch.draw(ctx);
+      ctx.restore();
     }
     
     // Screen flash
