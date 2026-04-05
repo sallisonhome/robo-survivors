@@ -308,51 +308,42 @@ const isMobile = /Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/
   (navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches);
 
 // ---- FORCE LANDSCAPE ON MOBILE ----
-// Mobile ALWAYS renders in landscape. In portrait, CSS-rotate the canvas 90deg.
-// The game's internal resolution is always landscape (wider than tall).
-// Touch coordinates are remapped in the Touch handler when rotated.
-let mobileIsPortrait = false;
-function mobileLayoutUpdate() {
+// Lock canvas to landscape dimensions ONCE. Never change. Never resize.
+// The CSS handles rotation visually — game code never cares about device orientation.
+let mobileLongEdge = 0;
+let mobileShortEdge = 0;
+let mobileIsPortrait = false; // frozen at init time
+
+function mobileLayoutInit() {
   if (!isMobile) return;
   const overlay = document.getElementById('rotateOverlay');
-  if (overlay) overlay.style.display = 'none'; // never show overlay
+  if (overlay) overlay.style.display = 'none';
   const canvas = document.getElementById('gameCanvas');
   if (!canvas) return;
   
-  const screenW = window.innerWidth;
-  const screenH = window.innerHeight;
-  // Always use the long edge as game width, short edge as game height
-  const longEdge = Math.max(screenW, screenH);
-  const shortEdge = Math.min(screenW, screenH);
-  mobileIsPortrait = screenH > screenW;
+  // Determine device edges ONCE
+  const sw = window.screen.width || window.innerWidth;
+  const sh = window.screen.height || window.innerHeight;
+  mobileLongEdge = Math.max(sw, sh);
+  mobileShortEdge = Math.min(sw, sh);
+  mobileIsPortrait = window.innerHeight > window.innerWidth;
   
-  // Game resolution is ALWAYS landscape
-  canvas.width = longEdge;
-  canvas.height = shortEdge;
-  if (typeof game !== 'undefined' && game.width !== undefined) {
-    game.width = longEdge;
-    game.height = shortEdge;
-  }
+  // Set canvas to landscape resolution — NEVER changes
+  canvas.width = mobileLongEdge;
+  canvas.height = mobileShortEdge;
+  
+  // Fixed CSS — covers full screen in landscape orientation
+  canvas.style.position = 'fixed';
+  canvas.style.top = '0';
+  canvas.style.left = '0';
+  canvas.style.width = mobileLongEdge + 'px';
+  canvas.style.height = mobileShortEdge + 'px';
   
   if (mobileIsPortrait) {
-    // CSS-rotate canvas to display landscape in portrait device
-    canvas.style.position = 'fixed';
-    canvas.style.top = '0';
-    canvas.style.left = '0';
-    canvas.style.width = longEdge + 'px';
-    canvas.style.height = shortEdge + 'px';
     canvas.style.transform = 'rotate(90deg) translateY(-100%)';
     canvas.style.transformOrigin = 'top left';
-  } else {
-    // Already landscape — fill screen
-    canvas.style.position = 'fixed';
-    canvas.style.top = '0';
-    canvas.style.left = '0';
-    canvas.style.width = longEdge + 'px';
-    canvas.style.height = shortEdge + 'px';
-    canvas.style.transform = '';
-    canvas.style.transformOrigin = '';
   }
+  // If already landscape, no transform needed — the fixed positioning handles it
 }
 
 const Touch = {
@@ -5959,7 +5950,9 @@ function init() {
   
   if (isMobile) {
     // Lock to landscape dimensions ONCE and never change
-    mobileLayoutUpdate();
+    mobileLayoutInit();
+    game.width = mobileLongEdge;
+    game.height = mobileShortEdge;
     if (Touch.active) Touch.resize();
   } else {
     resize();
