@@ -803,7 +803,7 @@ const game = {
     armorFlat: 0,
     regenPerSec: 0,
     xpMulti: 1.0,
-    critChance: 0,
+    piercingRounds: 0,
     maxHpMulti: 1.0,
   },
   
@@ -832,7 +832,7 @@ const game = {
   
   // Projectiles
   playerBullets: new Pool(() => ({
-    active: false, x: 0, y: 0, vx: 0, vy: 0, dmg: 1, prevX: 0, prevY: 0, _type: 'laser',
+    active: false, x: 0, y: 0, vx: 0, vy: 0, dmg: 1, prevX: 0, prevY: 0, _type: 'laser', pierceLeft: 0,
   }), 500),
   
   enemyBullets: new Pool(() => ({
@@ -927,6 +927,14 @@ function updatePlayer(dt) {
       emitParticles(p.x, p.y, 1, C.player, 8, 30, 0.2, 3);
     }
     
+    // Rescue humans while dashing (player sweeps through them)
+    for (let i = game.humans.length - 1; i >= 0; i--) {
+      const h = game.humans[i];
+      if (dist(h.x, h.y, p.x, p.y) < PLAYER_SIZE + h.size) {
+        rescueHuman(h, i);
+      }
+    }
+    
     if (p.dashTimer <= 0) {
       p.isDashing = false;
       p.iframes = 0.15; // brief invincibility at dash end
@@ -994,6 +1002,7 @@ function fireLaser(x, y, aimX, aimY) {
   b.vx = Math.cos(a) * spd;
   b.vy = Math.sin(a) * spd;
   b.dmg = LASER_DAMAGE * game.player.damageMulti;
+  b.pierceLeft = game.player.piercingRounds; // number of enemies this bullet can pass through
   b._type = 'laser';
   b._target = null;
   b._homingStr = 0;
@@ -1043,7 +1052,7 @@ function triggerGameEnd() {
 function checkScoreQualifies(score) {
   if (score <= 0) return false;
   // Always qualifies if fewer than 10 all-time scores
-  if (game.highScores.length < 10) return true;
+  if (game.highScores.length < 25) return true;
   // Qualifies if better than the worst all-time score
   const worst = game.highScores[game.highScores.length - 1];
   if (score > worst.score) return true;
@@ -1053,8 +1062,8 @@ function checkScoreQualifies(score) {
   const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1); weekStart.setHours(0,0,0,0);
   const dailyScores = game.highScores.filter(s => s.timestamp >= todayStart.getTime()).sort((a,b) => b.score - a.score);
   const weeklyScores = game.highScores.filter(s => s.timestamp >= weekStart.getTime()).sort((a,b) => b.score - a.score);
-  if (dailyScores.length < 10 || score > dailyScores[dailyScores.length - 1].score) return true;
-  if (weeklyScores.length < 10 || score > weeklyScores[weeklyScores.length - 1].score) return true;
+  if (dailyScores.length < 25 || score > dailyScores[dailyScores.length - 1].score) return true;
+  if (weeklyScores.length < 25 || score > weeklyScores[weeklyScores.length - 1].score) return true;
   return false;
 }
 
@@ -1066,16 +1075,28 @@ function drawPlayer(ctx) {
   ctx.translate(p.x, p.y);
   
   // === ALWAYS-VISIBLE GLOW AURA (drawn even during iframes) ===
-  // Pulsing cyan ring that's visible in the densest chaos
+  // Pulsing ring — turns YELLOW when dash is ready, cyan otherwise
+  const dashReady = p.dashCooldown <= 0 && !p.isDashing;
   const glowPulse = 0.35 + Math.sin(game.time * 5) * 0.15;
   const glowSize = PLAYER_SIZE * 2.5 + Math.sin(game.time * 3) * 4;
-  // Outer glow ring
-  ctx.strokeStyle = C.player;
-  ctx.lineWidth = 2;
-  ctx.globalAlpha = glowPulse * 0.5;
+  // Outer glow ring — yellow when dash available, cyan when on cooldown
+  const ringColor = dashReady ? '#ffcc00' : C.player;
+  ctx.strokeStyle = ringColor;
+  ctx.lineWidth = dashReady ? 3 : 2;
+  ctx.globalAlpha = dashReady ? (0.5 + Math.sin(game.time * 8) * 0.3) : (glowPulse * 0.5);
   ctx.beginPath();
   ctx.arc(0, 0, glowSize, 0, Math.PI * 2);
   ctx.stroke();
+  if (dashReady) {
+    // Extra glow bloom on the ring when dash is ready
+    ctx.shadowColor = '#ffcc00';
+    ctx.shadowBlur = 8;
+    ctx.globalAlpha = 0.3 + Math.sin(game.time * 6) * 0.15;
+    ctx.beginPath();
+    ctx.arc(0, 0, glowSize, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
   // Inner bright circle
   ctx.fillStyle = C.player;
   ctx.globalAlpha = glowPulse * 0.12;
@@ -1146,7 +1167,9 @@ function createEnemy(type, x, y) {
       e.points = 100; e.gemType = 'small';
       break;
     case 'hulk':
-      e.hp = 9999; e.maxHp = 9999; e.speed = 40;
+      e.hp = 9999; e.maxHp = 9999;
+      // Hulk base speed 40, +2% cumulative per brain wave after the first
+      e.speed = 40 * (1 + 0.02 * Math.max(0, (game.brainWaveCount || 0) - 1));
       e.size = 28; e.color = C.hulk;
       e.points = 0; e.gemType = 'none';
       e.special.invincible = true;
@@ -2228,9 +2251,14 @@ function updateProjectiles(dt) {
       if (!e.active || !e.alive || e.spawnTimer > 0) continue;
       if (dist(b.x, b.y, e.x, e.y) < e.size + 4) {
         damageEnemy(e, b.dmg);
-        b.active = false;
         emitParticles(b.x, b.y, 3, '#ffffff', 8, 80, 0.15, 2);
-        return;
+        if (b.pierceLeft > 0) {
+          b.pierceLeft--;
+          // Continue through — don't deactivate
+        } else {
+          b.active = false;
+          return;
+        }
       }
     }
   });
@@ -2458,7 +2486,7 @@ const PASSIVES = [
   { id: 'amplifier', name: 'Amplifier Core', desc: '+10% AoE', stat: 'aoeMulti', perLevel: 0.1, maxLevel: 8, additive: true },
   { id: 'nanite', name: 'Nanite Repair', desc: '+0.3 HP/sec', stat: 'regenPerSec', perLevel: 0.3, maxLevel: 8 },
   { id: 'crown', name: 'Neural Crown', desc: '+8% XP gain', stat: 'xpMulti', perLevel: 0.08, maxLevel: 8, additive: true },
-  { id: 'fortune', name: 'Fortune Chip', desc: '+5% crit chance', stat: 'critChance', perLevel: 0.05, maxLevel: 8 },
+  { id: 'fortune', name: 'Piercing Rounds', desc: '+1 laser pierce', stat: 'piercingRounds', perLevel: 1, maxLevel: 8 },
   { id: 'hollow', name: 'Hollow Core', desc: '+15% max HP', stat: 'maxHpMulti', perLevel: 0.15, maxLevel: 8, additive: true },
 ];
 
@@ -2566,7 +2594,7 @@ function recalcPassiveStats() {
   p.damageMulti = 1; p.speedMulti = 1; p.cooldownMulti = 1;
   p.pickupRadiusMulti = 1; p.projSpeedMulti = 1; p.durationMulti = 1;
   p.aoeMulti = 1; p.armorFlat = 0; p.regenPerSec = 0;
-  p.xpMulti = 1; p.critChance = 0; p.maxHpMulti = 1;
+  p.xpMulti = 1; p.piercingRounds = 0; p.maxHpMulti = 1;
   
   for (const pa of p.passives) {
     const def = PASSIVES.find(d => d.id === pa.id);
@@ -3238,10 +3266,12 @@ game.smartBombs = 0;
 game.smartBombFlash = 0; // visual flash timer
 game.smartBombNextAward = 5; // next wave to award bombs
 game.smartBombBonusThreshold = 500000; // next score threshold for bonus bomb
+game.smartBombScoreBonuses = 0; // cumulative bombs earned from score thresholds
 
 function awardSmartBombs() {
-  // Award 2 bombs every 5 waves (score-based bonuses handled in game loop with on-screen feedback)
-  game.smartBombs += 2;
+  // Award base 2 + all cumulative score-earned bombs every 5-wave cycle reset
+  const totalAward = 2 + game.smartBombScoreBonuses;
+  game.smartBombs = totalAward;
 }
 
 function triggerSmartBomb() {
@@ -3396,8 +3426,24 @@ function startNextWave() {
   
   // Brains on brain waves (every 5th)
   if (isBrainWave) {
+    game.brainWaveCount++;
     const brainCount = 3 + Math.floor(w / 2);
-    for (let i = 0; i < brainCount; i++) spawnEnemyAtEdge('brain');
+    for (let i = 0; i < brainCount; i++) {
+      const b = spawnEnemyAtEdge('brain');
+      // +5% cumulative speed per brain wave after the first
+      if (b && game.brainWaveCount > 1) {
+        b.speed *= 1 + 0.05 * (game.brainWaveCount - 1);
+      }
+    }
+    // Apply cumulative +2% speed increase to ALL hulks per brain wave after the first
+    if (game.brainWaveCount > 1) {
+      const hulkSpeedMulti = 1 + 0.02 * (game.brainWaveCount - 1);
+      for (const e of game.enemies) {
+        if (e.active && e.type === 'hulk') {
+          e.speed = 40 * hulkSpeedMulti;
+        }
+      }
+    }
   }
   
   // Spawn initial enemies
@@ -3452,7 +3498,10 @@ function startNextWave() {
   if (w % 5 === 1 || w === 1) {
     awardSmartBombs();
     if (w > 1) {
-      spawnFloatingText(game.player.x, game.player.y - 80, `+2 SMART BOMBS!`, '#ffcc00', 12);
+      const bombMsg = game.smartBombScoreBonuses > 0 
+        ? `SMART BOMBS: ${game.smartBombs} (2+${game.smartBombScoreBonuses} BONUS)`
+        : `+2 SMART BOMBS!`;
+      spawnFloatingText(game.player.x, game.player.y - 80, bombMsg, '#ffcc00', 12);
       if (!playSample('smartbomb_award', 1.0)) SFX.levelUp();
     }
   }
@@ -4496,7 +4545,7 @@ function getFilteredScores(tier) {
       filtered = [...game.highScores];
       break;
   }
-  return filtered.sort((a, b) => b.score - a.score).slice(0, 10);
+  return filtered.sort((a, b) => b.score - a.score).slice(0, 25);
 }
 
 function drawAttractScores(ctx) {
@@ -4510,16 +4559,21 @@ function drawAttractScores(ctx) {
   // Title
   ctx.textAlign = 'center';
   ctx.fillStyle = C.textCyan;
-  ctx.font = "bold 16px 'Press Start 2P', monospace";
+  ctx.font = "bold 48px 'Press Start 2P', monospace";
   ctx.shadowColor = C.textCyan;
   ctx.shadowBlur = 10;
-  ctx.fillText('HIGH SCORES', w / 2, 35);
+  ctx.fillText('HIGH SCORES', w / 2, 60);
   ctx.shadowBlur = 0;
   
   // Three columns: Daily | Weekly | All Time
   const titles = ["TODAY", "THIS WEEK", 'ALL TIME'];
   const titleColors = ['#44ff44', '#ffcc00', '#ff4444'];
   const colW = w / 3;
+  const headerY = 100;
+  const startY = 140;
+  // Calculate row height to fit 25 entries between startY and bottom (with room for "PRESS START")
+  const availableH = h * 0.90 - startY;
+  const rowH = Math.floor(availableH / 25);
   
   for (let col = 0; col < 3; col++) {
     const cx = colW * col + colW / 2;
@@ -4528,10 +4582,10 @@ function drawAttractScores(ctx) {
     // Column title
     ctx.textAlign = 'center';
     ctx.fillStyle = titleColors[col];
-    ctx.font = "bold 9px 'Press Start 2P', monospace";
+    ctx.font = "bold 27px 'Press Start 2P', monospace";
     ctx.shadowColor = titleColors[col];
     ctx.shadowBlur = 6;
-    ctx.fillText(titles[col], cx, 62);
+    ctx.fillText(titles[col], cx, headerY);
     ctx.shadowBlur = 0;
     
     // Divider line
@@ -4539,47 +4593,41 @@ function drawAttractScores(ctx) {
     ctx.globalAlpha = 0.3;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(cx - colW * 0.4, 70);
-    ctx.lineTo(cx + colW * 0.4, 70);
+    ctx.moveTo(cx - colW * 0.4, headerY + 12);
+    ctx.lineTo(cx + colW * 0.4, headerY + 12);
     ctx.stroke();
     ctx.globalAlpha = 1;
     
     if (scores.length === 0) {
       ctx.fillStyle = '#444444';
-      ctx.font = "6px 'Press Start 2P', monospace";
-      ctx.fillText('NO SCORES', cx, 120);
-      ctx.fillText('YET', cx, 134);
+      ctx.font = "18px 'Press Start 2P', monospace";
+      ctx.fillText('NO SCORES', cx, startY + 80);
+      ctx.fillText('YET', cx, startY + 110);
       continue;
     }
     
     // Entries
     for (let i = 0; i < scores.length; i++) {
       const s = scores[i];
-      const rowDelay = i * 0.08;
+      const rowDelay = i * 0.04;
       const rowAlpha = clamp((t - rowDelay) * 4, 0, 1);
       if (rowAlpha <= 0) continue;
       
       ctx.globalAlpha = rowAlpha;
-      const y = 88 + i * 20;
+      const y = startY + i * rowH;
       const isTop = i === 0;
       
-      ctx.fillStyle = isTop ? titleColors[col] : '#aaaaaa';
-      ctx.font = `${isTop ? 'bold ' : ''}6px 'Press Start 2P', monospace`;
+      ctx.fillStyle = isTop ? titleColors[col] : (i < 3 ? '#dddddd' : '#aaaaaa');
+      ctx.font = `${isTop ? 'bold ' : ''}18px 'Press Start 2P', monospace`;
       if (isTop) {
         ctx.shadowColor = titleColors[col];
         ctx.shadowBlur = 5;
       }
       
-      // Rank + initials on one line, score + wave on next
+      // Rank + initials + score on one line
       ctx.textAlign = 'center';
       ctx.fillText(`${i + 1}. ${s.initials}  ${s.score.toLocaleString()}`, cx, y);
       ctx.shadowBlur = 0;
-      
-      // Wave/level below in smaller dimmer text
-      ctx.fillStyle = isTop ? titleColors[col] : '#666666';
-      ctx.font = "5px 'Press Start 2P', monospace";
-      ctx.globalAlpha = rowAlpha * 0.7;
-      ctx.fillText(`W${s.wave} L${s.level}`, cx, y + 9);
     }
     ctx.globalAlpha = 1;
   }
@@ -4588,8 +4636,8 @@ function drawAttractScores(ctx) {
   ctx.strokeStyle = '#222222';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(colW, 55); ctx.lineTo(colW, h * 0.88);
-  ctx.moveTo(colW * 2, 55); ctx.lineTo(colW * 2, h * 0.88);
+  ctx.moveTo(colW, headerY - 20); ctx.lineTo(colW, h * 0.92);
+  ctx.moveTo(colW * 2, headerY - 20); ctx.lineTo(colW * 2, h * 0.92);
   ctx.stroke();
   
   // Press start
@@ -4597,8 +4645,8 @@ function drawAttractScores(ctx) {
   const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.5;
   ctx.globalAlpha = pressAlpha;
   ctx.fillStyle = C.textWhite;
-  ctx.font = "12px 'Press Start 2P', monospace";
-  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.95);
+  ctx.font = "24px 'Press Start 2P', monospace";
+  ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.96);
   ctx.globalAlpha = 1;
 }
 
@@ -4996,7 +5044,7 @@ function submitHighScore() {
   
   game.highScores.push(entry);
   game.highScores.sort((a, b) => b.score - a.score);
-  if (game.highScores.length > 20) game.highScores.length = 20;
+  if (game.highScores.length > 75) game.highScores.length = 75;
   
   // Try to save (works on Droplet, fails silently in sandbox)
   try {
@@ -5146,10 +5194,12 @@ function resetGame() {
   game.waveHumansLost = 0;
   game.gameOverReason = '';
   game.cycleSurvivorCount = 0;
+  game.brainWaveCount = 0; // tracks how many brain waves (5th wave) have occurred
   game.smartBombs = 0;
   game.smartBombFlash = 0;
   game.smartBombNextAward = 5;
   game.smartBombBonusThreshold = 500000;
+  game.smartBombScoreBonuses = 0;
   game.runTime = 0;
   game.nextHpRestore = 25000;
   game.powerScore = 0;
@@ -5272,9 +5322,10 @@ function init() {
           updateHeartbeat(dt);
           updateCamera(dt);
           
-          // Smart bomb bonus: +1 bomb per 500,000 points
+          // Smart bomb bonus: +1 bomb per 500,000 points (cumulative across wave resets)
           if (game.player.score >= game.smartBombBonusThreshold) {
             game.smartBombs++;
+            game.smartBombScoreBonuses++; // track cumulative bonus for wave resets
             game.smartBombBonusThreshold += 500000;
             // BIG on-screen notification the player can't miss
             spawnFloatingText(game.player.x, game.player.y - 60, 'ADDITIONAL SMART BOMB ACQUIRED', '#ffcc00', 16);
