@@ -681,6 +681,8 @@ function initAudio() {
   loadSample('rescue', 'rescue.wav');
   loadSample('smartbomb_award', 'smartbomb-award.wav');
   loadSample('wave5', 'wave5.wav');
+  // Load Stompy voice samples
+  stompyVoices.loadSamples();
 }
 
 function loadSample(name, url) {
@@ -3634,71 +3636,59 @@ let stompyVoiceTimer = 0; // countdown to next stompy callout
 let stompyVoiceIndex = 0; // alternates between callouts
 
 // ---- STOMPY VOICE SYSTEM ----
-// Uses SpeechSynthesis for AI computer voice callouts
+// Uses pre-generated AI voice WAV samples for cinematic quality
 const stompyVoices = {
-  _femaleVoice: null,
-  _maleVoice: null,
-  _voicesLoaded: false,
+  _samples: {},
+  _loaded: false,
+  _playing: false, // prevent overlapping voice lines
   
-  _loadVoices() {
-    if (this._voicesLoaded || typeof speechSynthesis === 'undefined') return;
-    const voices = speechSynthesis.getVoices();
-    if (voices.length === 0) return; // voices not loaded yet
-    this._voicesLoaded = true;
-    // Try to find good English voices
-    // Female: prefer Google, Microsoft, or any female voice
-    for (const v of voices) {
-      const name = v.name.toLowerCase();
-      if (!v.lang.startsWith('en')) continue;
-      if (!this._femaleVoice && (name.includes('female') || name.includes('samantha') || name.includes('zira') || name.includes('karen') || name.includes('victoria') || name.includes('google us') || name.includes('fiona'))) {
-        this._femaleVoice = v;
-      }
-      if (!this._maleVoice && (name.includes('male') || name.includes('daniel') || name.includes('david') || name.includes('alex') || name.includes('fred') || name.includes('google uk male') || name.includes('james'))) {
-        this._maleVoice = v;
+  async loadSamples() {
+    if (this._loaded) return;
+    this._loaded = true;
+    const files = {
+      activated: 'stompy-activated.wav',
+      stomping: 'stompy-stomping.wav',
+      smash: 'stompy-smash.wav',
+    };
+    for (const [key, file] of Object.entries(files)) {
+      try {
+        const resp = await fetch(file);
+        const buf = await resp.arrayBuffer();
+        this._samples[key] = await audioCtx.decodeAudioData(buf);
+      } catch (e) {
+        console.warn('Failed to load stompy voice:', file, e);
       }
     }
-    // Fallback: just use first two English voices
-    const enVoices = voices.filter(v => v.lang.startsWith('en'));
-    if (!this._femaleVoice && enVoices.length > 0) this._femaleVoice = enVoices[0];
-    if (!this._maleVoice && enVoices.length > 1) this._maleVoice = enVoices[1];
-    if (!this._maleVoice) this._maleVoice = this._femaleVoice;
+  },
+  
+  _play(sampleKey, volume) {
+    if (!audioCtx || !this._samples[sampleKey]) return;
+    if (this._playing) return; // don't overlap voice lines
+    this._playing = true;
+    const src = audioCtx.createBufferSource();
+    src.buffer = this._samples[sampleKey];
+    // Voice goes through its own gain node at HIGH volume, bypassing sfxGain
+    const voiceGain = audioCtx.createGain();
+    voiceGain.gain.value = volume;
+    src.connect(voiceGain).connect(masterGain);
+    src.onended = () => { this._playing = false; };
+    src.start();
   },
   
   speakActivation() {
-    if (typeof speechSynthesis === 'undefined') return;
-    this._loadVoices();
-    speechSynthesis.cancel(); // clear any pending
-    // Quieten all game SFX and blast Stompy voice at max
-    if (sfxGain) sfxGain.gain.value = 0.3; // duck game sounds way down
-    const u = new SpeechSynthesisUtterance('Stompy Activated');
-    u.rate = 1.1;  // slightly fast — confident
-    u.pitch = 1.4; // higher pitch — female AI computer
-    u.volume = 1.0; // max SpeechSynthesis volume
-    if (this._femaleVoice) u.voice = this._femaleVoice;
-    speechSynthesis.speak(u);
+    // Duck all game SFX so voice dominates
+    if (sfxGain) sfxGain.gain.value = 0.3;
+    this._play('activated', 3.0); // 3x louder than normal SFX
   },
   
   speakCallout(text) {
-    if (typeof speechSynthesis === 'undefined') return;
-    this._loadVoices();
-    // Don't interrupt activation announcement
-    if (speechSynthesis.speaking) return;
-    // Duck game sounds and blast Stompy callout at max
-    if (sfxGain) sfxGain.gain.value = 0.3; // duck game sounds way down
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 0.8;  // slower — powerful, ominous
-    u.pitch = 0.3; // very low pitch — deep robotic male
-    u.volume = 1.0; // max SpeechSynthesis volume
-    if (this._maleVoice) u.voice = this._maleVoice;
-    speechSynthesis.speak(u);
+    if (this._playing) return; // don't interrupt
+    if (sfxGain) sfxGain.gain.value = 0.3;
+    // Alternate between stomping and smash
+    const key = text.includes('Smash') ? 'smash' : 'stomping';
+    this._play(key, 3.0); // 3x louder than normal SFX
   },
 };
-
-// Pre-load voices (some browsers require this)
-if (typeof speechSynthesis !== 'undefined') {
-  speechSynthesis.onvoiceschanged = () => stompyVoices._loadVoices();
-  stompyVoices._loadVoices(); // try immediately too
-}
 
 function activateStompy() {
   stompyActive = true;
@@ -3768,9 +3758,9 @@ function updateStompy(dt) {
     stompyActive = false;
     game.camZoom = 1.0;
     game.player.iframes = 3.0; // Grace period
-    // Cancel any pending speech and restore normal SFX volume
-    if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+    // Restore normal SFX volume
     if (sfxGain) sfxGain.gain.value = 1.0;
+    stompyVoices._playing = false;
   }
 }
 
@@ -5746,8 +5736,8 @@ function resetGame() {
   stompyTimer = 0;
   stompyVoiceTimer = 0;
   stompyVoiceIndex = 0;
-  if (typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
   if (sfxGain) sfxGain.gain.value = 1.0; // restore normal SFX volume
+  stompyVoices._playing = false;
   game.camZoom = 1.0;
   resetWeaponState();
   
