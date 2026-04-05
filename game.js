@@ -2252,6 +2252,17 @@ function updateProjectiles(dt) {
       if (dist(b.x, b.y, e.x, e.y) < e.size + 4) {
         damageEnemy(e, b.dmg);
         emitParticles(b.x, b.y, 3, '#ffffff', 8, 80, 0.15, 2);
+        // Missile AoE explosion on impact
+        if (b._type === 'missile') {
+          const misLv = getWeaponLevel('missiles');
+          const aoeMult = game.player.aoeMulti;
+          const blastRadius = (30 + misLv * 5) * aoeMult;
+          const blastDmg = b.dmg * 0.5; // 50% of direct hit damage
+          weaponState.missiles.explosions.push({
+            x: b.x, y: b.y, radius: blastRadius, dmg: blastDmg,
+            life: 0.2, maxLife: 0.2, damaged: false,
+          });
+        }
         if (b.pierceLeft > 0) {
           b.pierceLeft--;
           // Continue through — don't deactivate
@@ -2618,7 +2629,7 @@ function recalcPassiveStats() {
 // Runtime state for active weapons
 const weaponState = {
   orbital: { angle: 0 },
-  missiles: { cooldown: 0 },
+  missiles: { cooldown: 0, explosions: [] },
   shockwave: { cooldown: 0, activeRadius: 0, activeDuration: 0 },
   lightning: { cooldown: 0, arcs: [] },
   flame: { trail: [] }, // {x, y, life, maxLife}
@@ -2630,6 +2641,7 @@ const weaponState = {
 function resetWeaponState() {
   weaponState.orbital.angle = 0;
   weaponState.missiles.cooldown = 0;
+  weaponState.missiles.explosions = [];
   weaponState.shockwave.cooldown = 0;
   weaponState.shockwave.activeRadius = 0;
   weaponState.shockwave.activeDuration = 0;
@@ -3003,6 +3015,29 @@ function updateWeapons(dt) {
       }
     }
   });
+
+  // ---- UPDATE MISSILE AoE EXPLOSIONS ----
+  for (let i = weaponState.missiles.explosions.length - 1; i >= 0; i--) {
+    const ex = weaponState.missiles.explosions[i];
+    ex.life -= dt;
+    if (ex.life <= 0) {
+      weaponState.missiles.explosions.splice(i, 1);
+      continue;
+    }
+    // Damage enemies in radius on first frame only
+    if (!ex.damaged) {
+      ex.damaged = true;
+      for (const e of game.enemies) {
+        if (!e.active || !e.alive || e.spawnTimer > 0) continue;
+        if (dist(ex.x, ex.y, e.x, e.y) < ex.radius + e.size) {
+          damageEnemy(e, ex.dmg);
+        }
+      }
+      // Impact burst particles
+      emitParticles(ex.x, ex.y, 8, '#ff8844', 12, 100, 0.25, 3);
+      emitParticles(ex.x, ex.y, 4, '#ffcc00', 8, 60, 0.15, 2);
+    }
+  }
 }
 
 function drawWeapons(ctx) {
@@ -3189,6 +3224,27 @@ function drawWeapons(ctx) {
     ctx.fillRect(-9, -1, 4, 2);
     ctx.restore();
   });
+
+  // ---- MISSILE AoE EXPLOSIONS (expanding orange ring) ----
+  for (const ex of weaponState.missiles.explosions) {
+    const progress = 1 - (ex.life / ex.maxLife); // 0 -> 1
+    const curRadius = ex.radius * progress;
+    const alpha = 1 - progress; // fade out
+    // Filled blast circle
+    ctx.globalAlpha = alpha * 0.25;
+    ctx.fillStyle = '#ff6600';
+    ctx.beginPath();
+    ctx.arc(ex.x, ex.y, curRadius, 0, Math.PI * 2);
+    ctx.fill();
+    // Bright expanding ring
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.strokeStyle = '#ffaa44';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(ex.x, ex.y, curRadius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
 
   // ---- SPREAD SHOT BULLETS (custom rendering) ----
   game.playerBullets.forEach(b => {
