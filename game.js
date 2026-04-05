@@ -705,12 +705,19 @@ function playSample(name, volume) {
 }
 
 function resumeAudio() {
-  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  // If audio context doesn't exist yet, create it now (on user gesture)
+  if (!audioCtx) {
+    initAudio();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume().catch(() => {});
+  }
 }
 
-// Mobile browsers require audio resume on user gesture — attach to all interaction events
-['touchstart', 'touchend', 'mousedown', 'keydown'].forEach(evt => {
-  document.addEventListener(evt, resumeAudio, { once: false, passive: true });
+// Mobile browsers require audio resume on user gesture — attach to ALL possible events
+// Use capture phase to fire before preventDefault in Touch handler
+['touchstart', 'touchend', 'mousedown', 'mouseup', 'click', 'keydown', 'pointerdown', 'pointerup'].forEach(evt => {
+  document.addEventListener(evt, resumeAudio, { capture: true, passive: true });
 });
 
 // Sound priority system
