@@ -206,10 +206,9 @@ const Input = {
     return false;
   },
 
-  update() {
-    // Reset just-pressed
+  // Called once per frame BEFORE the tick loop to capture gamepad state
+  pollGamepad() {
     this.gpButtonsJust.fill(false);
-    
     // Gamepad polling
     const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
     this.gamepad = null;
@@ -236,6 +235,30 @@ const Input = {
         if (pressed && !this.gpButtons[i]) this.gpButtonsJust[i] = true;
         this.gpButtons[i] = pressed;
       }
+    }
+    
+    // Stick flick detection for menu navigation
+    if (this.gamepad) {
+      const lx = this.gamepad.axes[0];
+      const ly = this.gamepad.axes[1];
+      if (lx < -0.4 && this._prevLX >= -0.4) this._stickFlickX = -1;
+      if (lx > 0.4 && this._prevLX <= 0.4) this._stickFlickX = 1;
+      if (ly < -0.4 && this._prevLY >= -0.4) this._stickFlickY = -1;
+      if (ly > 0.4 && this._prevLY <= 0.4) this._stickFlickY = 1;
+      this._prevLX = lx;
+      this._prevLY = ly;
+    }
+  },
+  
+  // Called per-tick inside the fixed timestep loop for continuous movement
+  update() {
+    let mx = 0, my = 0, ax = 0, ay = 0;
+    if (this.gamepad) {
+      const gp = this.gamepad;
+      const left = applyDeadzone(gp.axes[0], gp.axes[1], DEADZONE);
+      const right = applyDeadzone(gp.axes[2], gp.axes[3], DEADZONE);
+      mx = left.x; my = left.y;
+      ax = right.x; ay = right.y;
     }
 
     // Keyboard movement (WASD)
@@ -281,19 +304,6 @@ const Input = {
     this.moveY = my;
     this.aimX = ax;
     this.aimY = ay;
-    
-    // Stick flick detection for menu navigation (crosses 0.5 threshold)
-    if (this.gamepad) {
-      const lx = this.gamepad.axes[0];
-      const ly = this.gamepad.axes[1];
-      // Stick flick: immediate on threshold cross, no cooldown for initial flick
-      if (lx < -0.4 && this._prevLX >= -0.4) this._stickFlickX = -1;
-      if (lx > 0.4 && this._prevLX <= 0.4) this._stickFlickX = 1;
-      if (ly < -0.4 && this._prevLY >= -0.4) this._stickFlickY = -1;
-      if (ly > 0.4 && this._prevLY <= 0.4) this._stickFlickY = 1;
-      this._prevLX = lx;
-      this._prevLY = ly;
-    }
   },
 
   // Left stick flick detection for menu navigation
@@ -6034,6 +6044,9 @@ function init() {
     const delta = timestamp - lastTime;
     lastTime = timestamp;
     accumulator += delta;
+    
+    // Poll gamepad ONCE per frame (before tick loop) so button presses aren't lost
+    Input.pollGamepad();
     
     // Cap accumulator to prevent spiral of death
     if (accumulator > 200) accumulator = 200;
