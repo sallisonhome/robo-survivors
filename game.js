@@ -1164,6 +1164,7 @@ const game = {
   attractScoreTab: 0, // 0=daily, 1=weekly, 2=alltime
   attractScoreTabTimer: 0,
   titleMenuSelection: 0, // 0=start, 1=high scores, 2=controls
+  pauseMenuSelection: 0, // 0=resume, 1=quit
   
   // Power score (adaptive difficulty)
   powerScore: 0,
@@ -6195,6 +6196,7 @@ function init() {
           // Pause
           if (Input.gpJust(9) || Input.wasPressed('Escape')) {
             game.state = 'paused';
+            game.pauseMenuSelection = 0; // default to Resume
           }
           break;
           
@@ -6225,10 +6227,25 @@ function init() {
           break;
           
         case 'paused':
-          if (Input.startPressed() || Input.wasPressed('Escape')) {
-            game.state = 'playing';
+          // Navigate between Resume and Quit
+          if (Input.menuUp() || Input.menuDown()) {
+            game.pauseMenuSelection = game.pauseMenuSelection === 0 ? 1 : 0;
+            SFX.menuNav();
           }
-          // B button or Backspace = quit to menu
+          // Confirm selection
+          if (Input.startPressed() || Input.confirmPressed() || Input.wasPressed('Escape')) {
+            if (game.pauseMenuSelection === 0) {
+              game.state = 'playing';
+            } else {
+              game.state = 'title';
+              game.attractPhase = 0;
+              game.attractTimer = 0;
+              game.titleMenuSelection = 0;
+              if (sfxGain) sfxGain.gain.value = 1.0;
+            }
+            break;
+          }
+          // B button = quit directly
           if (Input.backPressed()) {
             game.state = 'title';
             game.attractPhase = 0;
@@ -6411,29 +6428,31 @@ function init() {
           ctx.fillText('PAUSED', w / 2, h / 2 - 10);
           
           // RESUME button
-          ctx.fillStyle = 'rgba(0,229,255,0.15)';
+          const resumeSel = game.pauseMenuSelection === 0;
+          ctx.fillStyle = resumeSel ? 'rgba(0,229,255,0.25)' : 'rgba(0,229,255,0.08)';
           ctx.fillRect(w/2 - 120, h/2 + 20, 240, 35);
-          ctx.strokeStyle = C.textCyan;
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = resumeSel ? C.textCyan : '#336666';
+          ctx.lineWidth = resumeSel ? 3 : 1;
           ctx.strokeRect(w/2 - 120, h/2 + 20, 240, 35);
-          ctx.fillStyle = C.textCyan;
-          ctx.font = "bold 12px 'Press Start 2P', monospace";
-          ctx.fillText('RESUME', w / 2, h / 2 + 44);
+          ctx.fillStyle = resumeSel ? C.textCyan : '#557777';
+          ctx.font = `${resumeSel ? 'bold ' : ''}12px 'Press Start 2P', monospace`;
+          ctx.fillText((resumeSel ? '> ' : '') + 'RESUME' + (resumeSel ? ' <' : ''), w / 2, h / 2 + 44);
           
           // QUIT button
-          ctx.fillStyle = 'rgba(255,68,68,0.15)';
+          const quitSel = game.pauseMenuSelection === 1;
+          ctx.fillStyle = quitSel ? 'rgba(255,68,68,0.25)' : 'rgba(255,68,68,0.08)';
           ctx.fillRect(w/2 - 120, h/2 + 65, 240, 35);
-          ctx.strokeStyle = '#ff4444';
-          ctx.lineWidth = 2;
+          ctx.strokeStyle = quitSel ? '#ff4444' : '#553333';
+          ctx.lineWidth = quitSel ? 3 : 1;
           ctx.strokeRect(w/2 - 120, h/2 + 65, 240, 35);
-          ctx.fillStyle = '#ff4444';
-          ctx.font = "bold 12px 'Press Start 2P', monospace";
-          ctx.fillText('QUIT TO MENU', w / 2, h / 2 + 89);
+          ctx.fillStyle = quitSel ? '#ff4444' : '#775555';
+          ctx.font = `${quitSel ? 'bold ' : ''}12px 'Press Start 2P', monospace`;
+          ctx.fillText((quitSel ? '> ' : '') + 'QUIT TO MENU' + (quitSel ? ' <' : ''), w / 2, h / 2 + 89);
           
           // Controls hint
           ctx.fillStyle = '#555555';
           ctx.font = "7px 'Press Start 2P', monospace";
-          ctx.fillText(Touch.active ? 'TAP TO SELECT' : (Input.gamepad ? 'START: RESUME    B: QUIT' : 'ESC: RESUME    BACKSPACE: QUIT'), w / 2, h / 2 + 120);
+          ctx.fillText(Touch.active ? 'TAP TO SELECT' : (Input.gamepad ? 'D-PAD: SELECT    A: CONFIRM' : 'UP/DOWN: SELECT    ENTER: CONFIRM'), w / 2, h / 2 + 120);
         }
         if (game.state === 'levelup') {
           drawLevelUpUI(ctx);
