@@ -1163,7 +1163,7 @@ const game = {
   attractReturnTimer: 30, // gameover returns to attract after this
   attractScoreTab: 0, // 0=daily, 1=weekly, 2=alltime
   attractScoreTabTimer: 0,
-  titleMenuSelection: 0, // 0=start, 1=controls
+  titleMenuSelection: 0, // 0=start, 1=high scores, 2=controls
   
   // Power score (adaptive difficulty)
   powerScore: 0,
@@ -4640,7 +4640,7 @@ function drawTitleScreen(ctx) {
   ctx.globalAlpha = 1;
   
   // Title menu selection
-  const menuItems = ['START GAME', 'VIEW & MAP CONTROLS'];
+  const menuItems = ['START GAME', 'VIEW HIGH SCORES', 'VIEW & MAP CONTROLS'];
   const menuY = h * 0.52;
   for (let i = 0; i < menuItems.length; i++) {
     const selected = i === game.titleMenuSelection;
@@ -4657,15 +4657,6 @@ function drawTitleScreen(ctx) {
   ctx.font = "7px 'Press Start 2P', monospace";
   ctx.fillText(Touch.active ? 'TAP SCREEN TO START' : (Input.gamepad ? 'D-PAD/STICK: SELECT    A: CONFIRM' : 'UP/DOWN: SELECT    ENTER: CONFIRM'), w / 2, menuY + menuItems.length * 30 + 20);
   
-  // Subtitle
-  ctx.fillStyle = '#555555';
-  ctx.font = "8px 'Press Start 2P', monospace";
-  ctx.fillText('INSERT COIN... JUST KIDDING, IT\'S FREE', w / 2, h * 0.72);
-  
-  // Credits
-  ctx.fillStyle = '#333333';
-  ctx.font = "7px 'Press Start 2P', monospace";
-  ctx.fillText('INSPIRED BY ROBOTRON: 2084 & VAMPIRE SURVIVORS', w / 2, h * 0.90);
 }
 
 // Demo scene state
@@ -5212,7 +5203,7 @@ function drawAttractScores(ctx) {
   ctx.stroke();
   
   // Press start (skip if postgame_scores state — it draws its own prompt)
-  if (game.state !== 'postgame_scores') {
+  if (game.state !== 'postgame_scores' && game.state !== 'view_scores') {
     ctx.textAlign = 'center';
     const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.5;
     ctx.globalAlpha = pressAlpha;
@@ -6000,11 +5991,24 @@ function init() {
               Input.mouseClicked = false;
               startGame(); break;
             }
-            if (Input.menuUp()) { game.titleMenuSelection = 0; SFX.menuNav(); game.attractTimer = 3; }
-            if (Input.menuDown()) { game.titleMenuSelection = 1; SFX.menuNav(); game.attractTimer = 3; }
+            if (Input.menuUp()) {
+              game.titleMenuSelection = Math.max(0, game.titleMenuSelection - 1);
+              SFX.menuNav(); game.attractTimer = 3;
+            }
+            if (Input.menuDown()) {
+              game.titleMenuSelection = Math.min(2, game.titleMenuSelection + 1);
+              SFX.menuNav(); game.attractTimer = 3;
+            }
             if (Input.confirmPressed() || Input.startPressed()) {
               if (game.titleMenuSelection === 0) { startGame(); break; }
               if (game.titleMenuSelection === 1) {
+                game.state = 'view_scores';
+                game.attractTimer = 0;
+                fetchGlobalScores();
+                SFX.menuConfirm();
+                break;
+              }
+              if (game.titleMenuSelection === 2) {
                 game.state = 'controls';
                 buildControlsMenuItems();
                 controlsMenu.selection = 3; // first remappable item
@@ -6100,6 +6104,32 @@ function init() {
           // Pause
           if (Input.gpJust(9) || Input.wasPressed('Escape')) {
             game.state = 'paused';
+          }
+          break;
+          
+        case 'view_scores':
+          game.attractTimer += dt;
+          // B button, Backspace, Escape, or tap = return to title
+          if (Input.backPressed() || Input.wasPressed('Escape')) {
+            game.state = 'title';
+            game.attractPhase = 0;
+            game.attractTimer = 0;
+            SFX.menuNav();
+            break;
+          }
+          if (Input.mouseClicked) {
+            Input.mouseClicked = false;
+            game.state = 'title';
+            game.attractPhase = 0;
+            game.attractTimer = 0;
+            break;
+          }
+          if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+            Touch.tapConsumed = true;
+            game.state = 'title';
+            game.attractPhase = 0;
+            game.attractTimer = 0;
+            break;
           }
           break;
           
@@ -6333,6 +6363,15 @@ function init() {
         ctx.font = "24px 'Press Start 2P', monospace";
         ctx.fillText(Input.gamepad ? 'PRESS START TO PLAY AGAIN' : 'PRESS ENTER TO PLAY AGAIN', game.width / 2, game.height * 0.96);
         ctx.globalAlpha = 1;
+        break;
+        
+      case 'view_scores':
+        drawAttractScores(ctx);
+        // Return hint at bottom
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#666666';
+        ctx.font = "10px 'Press Start 2P', monospace";
+        ctx.fillText(Touch.active ? 'TAP TO RETURN' : (Input.gamepad ? 'PRESS B TO RETURN' : 'ESC TO RETURN'), game.width / 2, game.height * 0.96);
         break;
     }
     
