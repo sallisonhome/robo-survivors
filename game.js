@@ -5410,6 +5410,40 @@ function updateControlsMenu(dt) {
     game.attractTimer = 3;
     SFX.menuNav();
   }
+  
+  // Mouse click on controls menu items
+  if (Input.mouseClicked) {
+    const startY = 90;
+    const rowH = 24;
+    for (let i = 0; i < controlsMenu.items.length; i++) {
+      const item = controlsMenu.items[i];
+      if (item.type === 'header') continue;
+      const y = startY + i * rowH;
+      if (Input.consumeClick(0, y - 8, game.width, rowH)) {
+        controlsMenu.selection = i;
+        if (item.type === 'action') {
+          if (item.action === 'back') {
+            game.state = 'title';
+            game.attractPhase = 0;
+            game.attractTimer = 3;
+            SFX.menuConfirm();
+          } else if (item.action === 'reset') {
+            Object.assign(binds, JSON.parse(JSON.stringify(DEFAULT_BINDS)));
+            buildControlsMenuItems();
+            SFX.menuConfirm();
+          }
+        } else if (item.type === 'bind' && !item.fixed) {
+          controlsMenu.remapping = true;
+          SFX.menuConfirm();
+        }
+        break;
+      }
+    }
+    // Click anywhere else = back
+    if (Input.mouseClicked) {
+      Input.mouseClicked = false;
+    }
+  }
 }
 
 function drawControlsMenu(ctx) {
@@ -5605,6 +5639,40 @@ function updateHighScoreEntry(dt) {
   
   if (moved) SFX.menuNav();
   
+  // Mouse click on high score entry slots/arrows
+  if (Input.mouseClicked) {
+    const w = game.width, h = game.height;
+    const slotW = isMobile ? 70 : 50;
+    const slotGap = isMobile ? 15 : 20;
+    const totalSlotW = slotW * 3 + slotGap * 2;
+    const startX = (w - totalSlotW) / 2;
+    const slotY = h * 0.52;
+    for (let i = 0; i < 3; i++) {
+      const sx = startX + i * (slotW + slotGap);
+      // Click up arrow
+      if (Input.consumeClick(sx - 10, slotY - 50, slotW + 20, 40)) {
+        hsEntry.currentSlot = i;
+        hsEntry.slots[i] = (hsEntry.slots[i] + 1) % INITIALS_CHARS.length;
+        moved = true; break;
+      }
+      // Click down arrow
+      if (Input.consumeClick(sx - 10, slotY + 45, slotW + 20, 40)) {
+        hsEntry.currentSlot = i;
+        hsEntry.slots[i] = (hsEntry.slots[i] - 1 + INITIALS_CHARS.length) % INITIALS_CHARS.length;
+        moved = true; break;
+      }
+      // Click on slot to select it
+      if (Input.consumeClick(sx - 10, slotY - 5, slotW + 20, 50)) {
+        hsEntry.currentSlot = i; break;
+      }
+    }
+    // Click DONE/NEXT button
+    if (Input.consumeClick(w/2 - 80, h * 0.82 - 15, 160, 40)) {
+      if (hsEntry.currentSlot < 2) { hsEntry.currentSlot++; SFX.menuConfirm(); }
+      else { submitHighScore(); return; }
+    }
+  }
+  
   // Direct keyboard letter typing
   for (let code = 65; code <= 90; code++) {
     if (Input.wasPressed('Key' + String.fromCharCode(code))) {
@@ -5795,8 +5863,8 @@ function drawHighScoreEntry(ctx) {
   ctx.fillRect(activeX + 5, slotY + 42, slotW - 10, 3);
   ctx.globalAlpha = 1;
   
-  // DONE / NEXT button for touch
-  if (Touch.active) {
+  // DONE / NEXT button (visible for touch and mouse users)
+  if (Touch.active || !Input.gamepad) {
     const btnLabel = hsEntry.currentSlot < 2 ? 'NEXT ▶' : 'DONE ✓';
     const btnColor = hsEntry.currentSlot < 2 ? C.textCyan : '#44ff44';
     ctx.fillStyle = 'rgba(255,255,255,0.1)';
@@ -6394,7 +6462,7 @@ function init() {
         ctx.textAlign = 'center';
         ctx.fillStyle = '#666666';
         ctx.font = "10px 'Press Start 2P', monospace";
-        ctx.fillText(Touch.active ? 'TAP TO RETURN' : (Input.gamepad ? 'PRESS B TO RETURN' : 'ESC TO RETURN'), game.width / 2, game.height * 0.96);
+        ctx.fillText(Touch.active ? 'TAP TO RETURN' : (Input.gamepad ? 'PRESS B TO RETURN' : 'ESC OR CLICK TO RETURN'), game.width / 2, game.height * 0.96);
         break;
     }
     
