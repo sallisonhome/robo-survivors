@@ -286,13 +286,11 @@ const Input = {
     if (this.gamepad) {
       const lx = this.gamepad.axes[0];
       const ly = this.gamepad.axes[1];
-      this._stickCooldown -= 1/60;
-      if (this._stickCooldown <= 0) {
-        if (lx < -0.5 && this._prevLX >= -0.5) { this._stickFlickX = -1; this._stickCooldown = 0.15; }
-        if (lx > 0.5 && this._prevLX <= 0.5) { this._stickFlickX = 1; this._stickCooldown = 0.15; }
-        if (ly < -0.5 && this._prevLY >= -0.5) { this._stickFlickY = -1; this._stickCooldown = 0.15; }
-        if (ly > 0.5 && this._prevLY <= 0.5) { this._stickFlickY = 1; this._stickCooldown = 0.15; }
-      }
+      // Stick flick: immediate on threshold cross, no cooldown for initial flick
+      if (lx < -0.4 && this._prevLX >= -0.4) this._stickFlickX = -1;
+      if (lx > 0.4 && this._prevLX <= 0.4) this._stickFlickX = 1;
+      if (ly < -0.4 && this._prevLY >= -0.4) this._stickFlickY = -1;
+      if (ly > 0.4 && this._prevLY <= 0.4) this._stickFlickY = 1;
       this._prevLX = lx;
       this._prevLY = ly;
     }
@@ -301,7 +299,6 @@ const Input = {
   // Left stick flick detection for menu navigation
   _prevLX: 0, _prevLY: 0,
   _stickFlickX: 0, _stickFlickY: 0,
-  _stickCooldown: 0,
   
   endFrame() { this.justPressed = {}; this._stickFlickX = 0; this._stickFlickY = 0; this.mouseClicked = false; this.mouseClickX = -1; this.mouseClickY = -1; },
   isDown(code) { return !!this.keys[code]; },
@@ -6361,6 +6358,7 @@ function init() {
     if (game.state === 'levelup') updateLevelUpInput(frameDt);
     if (game.state === 'controls') updateControlsMenu(frameDt);
     if (game.state === 'highscore_entry') updateHighScoreEntry(frameDt);
+
     // Smart bomb and dash — per-frame for instant response
     if (game.state === 'playing' && game.player.alive) {
       if (Input.gpJust(binds.smartbomb.gp) || Input.wasPressed(binds.smartbomb.key) || Touch.bombJust) {
