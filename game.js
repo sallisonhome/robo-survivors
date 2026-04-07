@@ -6253,7 +6253,7 @@ function init() {
       }
     }
     if (game.state === 'view_scores') {
-      if (Input.backPressed() || Input.wasPressed('Escape') || Input.mouseClicked || (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed)) {
+      if (Input.backPressed() || Input.wasPressed('Escape') || Input.confirmPressed() || Input.startPressed() || Input.mouseClicked || (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed)) {
         Input.mouseClicked = false; if (Touch.active) Touch.tapConsumed = true;
         game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; SFX.menuNav();
       }
@@ -6380,7 +6380,7 @@ function init() {
         ctx.textAlign = 'center';
         ctx.fillStyle = '#666666';
         ctx.font = "10px 'Press Start 2P', monospace";
-        ctx.fillText(Touch.active ? 'TAP TO RETURN' : (Input.gamepad ? 'PRESS B TO RETURN' : 'ESC OR CLICK TO RETURN'), game.width / 2, game.height * 0.96);
+        ctx.fillText(Touch.active ? 'TAP TO RETURN' : (Input.gamepad ? 'B: BACK TO MENU' : 'ESC / CLICK: BACK TO MENU'), game.width / 2, game.height * 0.96);
         break;
     }
     
