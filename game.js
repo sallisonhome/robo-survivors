@@ -5986,10 +5986,33 @@ function init() {
               Touch.tapConsumed = true;
               startGame(); break;
             }
-            // Mouse click: anywhere on title screen to start
+            // Mouse click on menu items
             if (Input.mouseClicked) {
-              Input.mouseClicked = false;
-              startGame(); break;
+              const menuY = game.height * 0.52;
+              for (let mi = 0; mi < 3; mi++) {
+                if (Input.consumeClick(0, menuY + mi * 30 - 15, game.width, 30)) {
+                  if (mi === 0) { startGame(); break; }
+                  if (mi === 1) {
+                    game.state = 'view_scores';
+                    game.attractTimer = 0;
+                    fetchGlobalScores();
+                    SFX.menuConfirm();
+                    break;
+                  }
+                  if (mi === 2) {
+                    game.state = 'controls';
+                    buildControlsMenuItems();
+                    controlsMenu.selection = 3;
+                    SFX.menuConfirm();
+                    break;
+                  }
+                }
+              }
+              // If click didn't hit a menu item, start game anyway
+              if (Input.mouseClicked) {
+                Input.mouseClicked = false;
+                startGame(); break;
+              }
             }
             if (Input.menuUp()) {
               game.titleMenuSelection = Math.max(0, game.titleMenuSelection - 1);
