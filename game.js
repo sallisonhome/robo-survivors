@@ -5207,7 +5207,11 @@ function drawAttractScores(ctx) {
     ctx.globalAlpha = pressAlpha;
     ctx.fillStyle = C.textWhite;
     ctx.font = "24px 'Press Start 2P', monospace";
-    ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.96);
+    ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.94);
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#666666';
+    ctx.font = "10px 'Press Start 2P', monospace";
+    ctx.fillText(Input.gamepad ? 'B: BACK TO MENU' : 'ESC / CLICK: BACK TO MENU', w / 2, h * 0.98);
     ctx.globalAlpha = 1;
   }
 }
@@ -6219,9 +6223,12 @@ function init() {
       }
     }
     if (game.state === 'title' && game.attractPhase !== 0) {
-      if (Input.startPressed() || Input.mouseClicked || (Touch.active && Touch.tapX >= 0)) {
+      // Start = play game
+      if (Input.startPressed()) { startGame(); }
+      // B/Esc/click = return to title menu
+      else if (Input.backPressed() || Input.wasPressed('Escape') || Input.mouseClicked || (Touch.active && Touch.tapX >= 0)) {
         Input.mouseClicked = false; if (Touch.active) Touch.tapConsumed = true;
-        startGame();
+        game.attractPhase = 0; game.attractTimer = 0;
       }
     }
     if (game.state === 'paused') {
