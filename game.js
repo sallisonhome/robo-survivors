@@ -2404,7 +2404,7 @@ function rescueHuman(h, index) {
   emitDirectionalParticles(h.x, h.y, 15, '#44ff44', 0, -1, 40, 120, 0.8, 3);
   spawnFloatingText(h.x, h.y - 15, `${points}`, '#44ff44', 14);
   // Play the Joust WAV sample for rescue, fall back to procedural if not loaded
-  if (!playSample('rescue', 0.9)) SFX.humanRescue(rescueNum);
+  if (!playSample('rescue', 0.35)) SFX.humanRescue(rescueNum);
 }
 
 function killHuman(h, index) {
@@ -6123,11 +6123,7 @@ function init() {
             if (ft.life <= 0) floatingTexts.splice(i, 1);
           }
           
-          // Pause
-          if (Input.gpJust(9) || Input.wasPressed('Escape')) {
-            game.state = 'paused';
-            game.pauseMenuSelection = 0; // default to Resume
-          }
+          // Pause handled per-frame outside tick loop
           break;
           
         case 'view_scores':
@@ -6187,6 +6183,12 @@ function init() {
     if (game.state === 'levelup') updateLevelUpInput(frameDt);
     if (game.state === 'controls') updateControlsMenu(frameDt);
     if (game.state === 'highscore_entry') updateHighScoreEntry(frameDt);
+    
+    // Pause trigger FIRST — before any menu handlers that might consume the Start press
+    if (game.state === 'playing' && (Input.gpJust(9) || Input.wasPressed('Escape'))) {
+      game.state = 'paused';
+      game.pauseMenuSelection = 0;
+    }
     
     // ---- PER-FRAME MENU INPUT (title, pause, gameover, postgame, view_scores) ----
     // Runs outside tick loop for instant 1:1 response on button press
@@ -6256,6 +6258,7 @@ function init() {
         game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; SFX.menuNav();
       }
     }
+
 
     // Smart bomb and dash — per-frame for instant response
     if (game.state === 'playing' && game.player.alive) {
