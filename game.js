@@ -6175,10 +6175,8 @@ function init() {
           break;
       }
       
-      // Only clear per-tick input flags during gameplay states
-      if (game.state === 'playing' || game.state === 'paused' || game.state === 'title' || game.state === 'gameover' || game.state === 'postgame_scores') {
-        Input.endFrame();
-      }
+      // Don't clear input here — per-frame handlers need to read it after the tick loop
+      // Input.endFrame() is called once at the end of the full frame instead
       accumulator -= TICK_RATE;
     }
     
