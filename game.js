@@ -6199,10 +6199,14 @@ function init() {
     if (game.state === 'controls') updateControlsMenu(frameDt);
     if (game.state === 'highscore_entry') updateHighScoreEntry(frameDt);
     
-    // Pause trigger FIRST — before any menu handlers that might consume the Start press
+    // Pause trigger FIRST — before any menu handlers
     if (game.state === 'playing' && (Input.gpJust(9) || Input.wasPressed('Escape'))) {
       game.state = 'paused';
       game.pauseMenuSelection = 0;
+      // CONSUME the input so the paused handler doesn't immediately read it
+      Input.gpButtonsJust[9] = false;
+      Input.justPressed['Escape'] = false;
+      Input.justPressed['Backspace'] = false;
     }
     
     // ---- PER-FRAME MENU INPUT (title, pause, gameover, postgame, view_scores) ----
@@ -6243,21 +6247,46 @@ function init() {
       }
     }
     if (game.state === 'paused') {
-      if (Input.menuUp() || Input.menuDown()) { game.pauseMenuSelection = game.pauseMenuSelection === 0 ? 1 : 0; SFX.menuNav(); }
-      if (Input.startPressed() || Input.confirmPressed()) {
-        if (game.pauseMenuSelection === 0) game.state = 'playing';
-        else { game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; game.titleMenuSelection = 0; if (sfxGain) sfxGain.gain.value = 1.0; }
+      // Navigate
+      if (Input.menuUp() || Input.menuDown()) {
+        game.pauseMenuSelection = game.pauseMenuSelection === 0 ? 1 : 0;
+        SFX.menuNav();
       }
-      if (Input.backPressed()) { game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; game.titleMenuSelection = 0; if (sfxGain) sfxGain.gain.value = 1.0; }
+      // Escape or Start = RESUME (same key that opened pause closes it)
+      if (Input.wasPressed('Escape') || Input.gpJust(9)) {
+        game.state = 'playing';
+      }
+      // A button or Enter = confirm selected option
+      else if (Input.gpJust(0) || Input.wasPressed('Enter')) {
+        if (game.pauseMenuSelection === 0) {
+          game.state = 'playing';
+        } else {
+          game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0;
+          game.titleMenuSelection = 0; if (sfxGain) sfxGain.gain.value = 1.0;
+        }
+      }
+      // B button = quit to menu directly
+      else if (Input.gpJust(1) || Input.wasPressed('Backspace')) {
+        game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0;
+        game.titleMenuSelection = 0; if (sfxGain) sfxGain.gain.value = 1.0;
+      }
+      // Mouse click on buttons
       if (Input.mouseClicked) {
         const w = game.width, h = game.height;
         if (Input.consumeClick(w/2-120, h/2+20, 240, 35)) game.state = 'playing';
-        else if (Input.consumeClick(w/2-120, h/2+65, 240, 35)) { game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; if (sfxGain) sfxGain.gain.value = 1.0; }
+        else if (Input.consumeClick(w/2-120, h/2+65, 240, 35)) {
+          game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0;
+          if (sfxGain) sfxGain.gain.value = 1.0;
+        }
       }
+      // Touch
       if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
         const w = game.width, h = game.height;
         if (Touch.consumeTap(w/2-120, h/2+20, 240, 35)) game.state = 'playing';
-        else if (Touch.consumeTap(w/2-120, h/2+65, 240, 35)) { game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; if (sfxGain) sfxGain.gain.value = 1.0; }
+        else if (Touch.consumeTap(w/2-120, h/2+65, 240, 35)) {
+          game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0;
+          if (sfxGain) sfxGain.gain.value = 1.0;
+        }
       }
     }
     if (game.state === 'gameover') {
