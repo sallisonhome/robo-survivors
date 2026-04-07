@@ -6046,74 +6046,7 @@ function init() {
         case 'title':
           game.attractTimer += dt;
           // Title menu navigation (only during phase 0 = title screen)
-          if (game.attractPhase === 0) {
-            // Touch: tap anywhere on title screen to start
-            if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
-              Touch.tapConsumed = true;
-              startGame(); break;
-            }
-            // Mouse click on menu items
-            if (Input.mouseClicked) {
-              const menuY = game.height * 0.52;
-              for (let mi = 0; mi < 3; mi++) {
-                if (Input.consumeClick(0, menuY + mi * 30 - 15, game.width, 30)) {
-                  if (mi === 0) { startGame(); break; }
-                  if (mi === 1) {
-                    game.state = 'view_scores';
-                    game.attractTimer = 0;
-                    fetchGlobalScores();
-                    SFX.menuConfirm();
-                    break;
-                  }
-                  if (mi === 2) {
-                    game.state = 'controls';
-                    buildControlsMenuItems();
-                    controlsMenu.selection = 3;
-                    SFX.menuConfirm();
-                    break;
-                  }
-                }
-              }
-              // If click didn't hit a menu item, start game anyway
-              if (Input.mouseClicked) {
-                Input.mouseClicked = false;
-                startGame(); break;
-              }
-            }
-            if (Input.menuUp()) {
-              game.titleMenuSelection = Math.max(0, game.titleMenuSelection - 1);
-              SFX.menuNav(); game.attractTimer = 3;
-            }
-            if (Input.menuDown()) {
-              game.titleMenuSelection = Math.min(2, game.titleMenuSelection + 1);
-              SFX.menuNav(); game.attractTimer = 3;
-            }
-            if (Input.confirmPressed() || Input.startPressed()) {
-              if (game.titleMenuSelection === 0) { startGame(); break; }
-              if (game.titleMenuSelection === 1) {
-                game.state = 'view_scores';
-                game.attractTimer = 0;
-                fetchGlobalScores();
-                SFX.menuConfirm();
-                break;
-              }
-              if (game.titleMenuSelection === 2) {
-                game.state = 'controls';
-                buildControlsMenuItems();
-                controlsMenu.selection = 3; // first remappable item
-                SFX.menuConfirm();
-                break;
-              }
-            }
-          } else {
-            // During demo/scores phases, start pressed or tap/click begins game
-            if (Input.startPressed()) { startGame(); break; }
-            if (Input.mouseClicked) { Input.mouseClicked = false; startGame(); break; }
-            if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
-              Touch.tapConsumed = true;
-              startGame(); break;
-            }
-          }
+          // Input handled per-frame outside tick loop for instant response
           // Attract mode cycle: title 60s -> demo 30s -> scores 30s -> title
           if (game.attractPhase === 0 && game.attractTimer > 60) {
             game.attractPhase = 1; game.attractTimer = 0; demoInited = false; // -> demo (reinit scene)
@@ -6199,84 +6132,11 @@ function init() {
           
         case 'view_scores':
           game.attractTimer += dt;
-          // B button, Backspace, Escape, or tap = return to title
-          if (Input.backPressed() || Input.wasPressed('Escape')) {
-            game.state = 'title';
-            game.attractPhase = 0;
-            game.attractTimer = 0;
-            SFX.menuNav();
-            break;
-          }
-          if (Input.mouseClicked) {
-            Input.mouseClicked = false;
-            game.state = 'title';
-            game.attractPhase = 0;
-            game.attractTimer = 0;
-            break;
-          }
-          if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
-            Touch.tapConsumed = true;
-            game.state = 'title';
-            game.attractPhase = 0;
-            game.attractTimer = 0;
-            break;
-          }
+          // Input handled per-frame outside tick loop
           break;
           
         case 'paused':
-          // Navigate between Resume and Quit
-          if (Input.menuUp() || Input.menuDown()) {
-            game.pauseMenuSelection = game.pauseMenuSelection === 0 ? 1 : 0;
-            SFX.menuNav();
-          }
-          // Confirm selection
-          if (Input.startPressed() || Input.confirmPressed() || Input.wasPressed('Escape')) {
-            if (game.pauseMenuSelection === 0) {
-              game.state = 'playing';
-            } else {
-              game.state = 'title';
-              game.attractPhase = 0;
-              game.attractTimer = 0;
-              game.titleMenuSelection = 0;
-              if (sfxGain) sfxGain.gain.value = 1.0;
-            }
-            break;
-          }
-          // B button = quit directly
-          if (Input.backPressed()) {
-            game.state = 'title';
-            game.attractPhase = 0;
-            game.attractTimer = 0;
-            game.titleMenuSelection = 0;
-            if (sfxGain) sfxGain.gain.value = 1.0;
-            break;
-          }
-          // Mouse click on RESUME or QUIT
-          if (Input.mouseClicked) {
-            const w = game.width, h = game.height;
-            if (Input.consumeClick(w/2 - 120, h/2 + 20, 240, 35)) {
-              game.state = 'playing';
-            } else if (Input.consumeClick(w/2 - 120, h/2 + 65, 240, 35)) {
-              game.state = 'title';
-              game.attractPhase = 0;
-              game.attractTimer = 0;
-              game.titleMenuSelection = 0;
-              if (sfxGain) sfxGain.gain.value = 1.0;
-            }
-          }
-          // Touch: tap RESUME or QUIT
-          if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
-            const w = game.width, h = game.height;
-            if (Touch.consumeTap(w/2 - 120, h/2 + 20, 240, 35)) {
-              game.state = 'playing';
-            } else if (Touch.consumeTap(w/2 - 120, h/2 + 65, 240, 35)) {
-              game.state = 'title';
-              game.attractPhase = 0;
-              game.attractTimer = 0;
-              game.titleMenuSelection = 0;
-              if (sfxGain) sfxGain.gain.value = 1.0;
-            }
-          }
+          // Input handled per-frame outside tick loop for instant response
           break;
           
         case 'levelup':
@@ -6286,22 +6146,7 @@ function init() {
         case 'gameover':
           game.attractTimer += dt;
           game.attractReturnTimer -= dt;
-          if (Input.startPressed()) { startGame(); break; }
-          if (Input.mouseClicked) { Input.mouseClicked = false; startGame(); break; }
-          // Touch: tap to play again
-          if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
-            Touch.tapConsumed = true;
-            startGame(); break;
-          }
-          // B button or Escape to return to main menu
-          if (Input.backPressed()) {
-            game.state = 'title';
-            game.attractPhase = 0;
-            game.attractTimer = 0;
-            game.titleMenuSelection = 0;
-            break;
-          }
-          // When timer runs out, go to high score table view
+          // Input handled per-frame outside tick loop
           if (game.attractReturnTimer <= 0) {
             game.state = 'postgame_scores';
             game.postgameTimer = 20;
@@ -6320,23 +6165,7 @@ function init() {
         case 'postgame_scores':
           game.attractTimer += dt;
           game.postgameTimer -= dt;
-          // Start pressed = play again immediately
-          if (Input.startPressed() || Input.confirmPressed()) { startGame(); break; }
-          if (Input.mouseClicked) { Input.mouseClicked = false; startGame(); break; }
-          // Touch: tap to play again
-          if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
-            Touch.tapConsumed = true;
-            startGame(); break;
-          }
-          // Back button = return to title
-          if (Input.backPressed()) {
-            game.state = 'title';
-            game.attractPhase = 0;
-            game.attractTimer = 0;
-            game.titleMenuSelection = 0;
-            break;
-          }
-          // After 20 seconds, return to title
+          // Input handled per-frame outside tick loop
           if (game.postgameTimer <= 0) {
             game.state = 'title';
             game.attractPhase = 0;
@@ -6358,6 +6187,75 @@ function init() {
     if (game.state === 'levelup') updateLevelUpInput(frameDt);
     if (game.state === 'controls') updateControlsMenu(frameDt);
     if (game.state === 'highscore_entry') updateHighScoreEntry(frameDt);
+    
+    // ---- PER-FRAME MENU INPUT (title, pause, gameover, postgame, view_scores) ----
+    // Runs outside tick loop for instant 1:1 response on button press
+    if (game.state === 'title' && game.attractPhase === 0) {
+      // Touch: tap to start
+      if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+        Touch.tapConsumed = true; startGame();
+      }
+      // Mouse click on menu items
+      if (Input.mouseClicked) {
+        const menuY = game.height * 0.52;
+        for (let mi = 0; mi < 3; mi++) {
+          if (Input.consumeClick(0, menuY + mi * 30 - 15, game.width, 30)) {
+            if (mi === 0) { startGame(); }
+            else if (mi === 1) { game.state = 'view_scores'; game.attractTimer = 0; fetchGlobalScores(); SFX.menuConfirm(); }
+            else if (mi === 2) { game.state = 'controls'; buildControlsMenuItems(); controlsMenu.selection = 3; SFX.menuConfirm(); }
+            break;
+          }
+        }
+        if (Input.mouseClicked) { Input.mouseClicked = false; startGame(); }
+      }
+      if (Input.menuUp()) { game.titleMenuSelection = Math.max(0, game.titleMenuSelection - 1); SFX.menuNav(); game.attractTimer = 3; }
+      if (Input.menuDown()) { game.titleMenuSelection = Math.min(2, game.titleMenuSelection + 1); SFX.menuNav(); game.attractTimer = 3; }
+      if (Input.confirmPressed() || Input.startPressed()) {
+        if (game.titleMenuSelection === 0) { startGame(); }
+        else if (game.titleMenuSelection === 1) { game.state = 'view_scores'; game.attractTimer = 0; fetchGlobalScores(); SFX.menuConfirm(); }
+        else if (game.titleMenuSelection === 2) { game.state = 'controls'; buildControlsMenuItems(); controlsMenu.selection = 3; SFX.menuConfirm(); }
+      }
+    }
+    if (game.state === 'title' && game.attractPhase !== 0) {
+      if (Input.startPressed() || Input.mouseClicked || (Touch.active && Touch.tapX >= 0)) {
+        Input.mouseClicked = false; if (Touch.active) Touch.tapConsumed = true;
+        startGame();
+      }
+    }
+    if (game.state === 'paused') {
+      if (Input.menuUp() || Input.menuDown()) { game.pauseMenuSelection = game.pauseMenuSelection === 0 ? 1 : 0; SFX.menuNav(); }
+      if (Input.startPressed() || Input.confirmPressed()) {
+        if (game.pauseMenuSelection === 0) game.state = 'playing';
+        else { game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; game.titleMenuSelection = 0; if (sfxGain) sfxGain.gain.value = 1.0; }
+      }
+      if (Input.backPressed()) { game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; game.titleMenuSelection = 0; if (sfxGain) sfxGain.gain.value = 1.0; }
+      if (Input.mouseClicked) {
+        const w = game.width, h = game.height;
+        if (Input.consumeClick(w/2-120, h/2+20, 240, 35)) game.state = 'playing';
+        else if (Input.consumeClick(w/2-120, h/2+65, 240, 35)) { game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; if (sfxGain) sfxGain.gain.value = 1.0; }
+      }
+      if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
+        const w = game.width, h = game.height;
+        if (Touch.consumeTap(w/2-120, h/2+20, 240, 35)) game.state = 'playing';
+        else if (Touch.consumeTap(w/2-120, h/2+65, 240, 35)) { game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; if (sfxGain) sfxGain.gain.value = 1.0; }
+      }
+    }
+    if (game.state === 'gameover') {
+      if (Input.startPressed() || Input.mouseClicked || (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed)) {
+        Input.mouseClicked = false; if (Touch.active) Touch.tapConsumed = true; startGame();
+      }
+    }
+    if (game.state === 'postgame_scores') {
+      if (Input.startPressed() || Input.confirmPressed() || Input.mouseClicked || (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed)) {
+        Input.mouseClicked = false; if (Touch.active) Touch.tapConsumed = true; startGame();
+      }
+    }
+    if (game.state === 'view_scores') {
+      if (Input.backPressed() || Input.wasPressed('Escape') || Input.mouseClicked || (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed)) {
+        Input.mouseClicked = false; if (Touch.active) Touch.tapConsumed = true;
+        game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; SFX.menuNav();
+      }
+    }
 
     // Smart bomb and dash — per-frame for instant response
     if (game.state === 'playing' && game.player.alive) {
