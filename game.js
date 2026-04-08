@@ -5817,10 +5817,15 @@ function submitHighScore() {
   if (game.player.score > game.sessionHigh) game.sessionHigh = game.player.score;
   
   hsEntry.active = false;
-  // Go directly to the high score table for 20 seconds
+  // Go directly to the high score table for 30 seconds
   game.state = 'postgame_scores';
-  game.postgameTimer = 20;
+  game.postgameTimer = 30;
   game.attractTimer = 0; // reset for row animation
+  // Consume all input so the postgame handler doesn't immediately start a new game
+  Input.endFrame();
+  Input.gpButtonsJust.fill(false);
+  Input.mouseClicked = false;
+  Touch.endFrame();
   SFX.menuConfirm();
 }
 
@@ -6326,8 +6331,14 @@ function init() {
       }
     }
     if (game.state === 'postgame_scores') {
-      if (Input.startPressed() || Input.confirmPressed() || Input.mouseClicked || (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed)) {
-        Input.mouseClicked = false; if (Touch.active) Touch.tapConsumed = true; startGame();
+      // B / Esc = return to main menu
+      if (Input.backPressed() || Input.wasPressed('Escape')) {
+        game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0;
+        game.titleMenuSelection = 0;
+      }
+      // Start = new game
+      else if (Input.gpJust(9)) {
+        startGame();
       }
     }
     if (game.state === 'view_scores') {
@@ -6443,13 +6454,11 @@ function init() {
         
       case 'postgame_scores':
         drawAttractScores(ctx);
-        // Override the "PRESS START/ENTER" text with "PRESS START TO PLAY AGAIN"
+        // Show navigation hints
         ctx.textAlign = 'center';
-        ctx.fillStyle = C.textWhite;
-        ctx.globalAlpha = 0.3 + Math.sin(game.attractTimer * Math.PI) * 0.5;
-        ctx.font = "24px 'Press Start 2P', monospace";
-        ctx.fillText(Input.gamepad ? 'PRESS START TO PLAY AGAIN' : 'PRESS ENTER TO PLAY AGAIN', game.width / 2, game.height * 0.96);
-        ctx.globalAlpha = 1;
+        ctx.fillStyle = '#666666';
+        ctx.font = `${Math.max(6, Math.floor(10 * Math.min(game.width/1280, game.height/720)))}px 'Press Start 2P', monospace`;
+        ctx.fillText(Input.gamepad ? 'B: MENU    START: NEW GAME' : 'ESC: MENU', game.width / 2, game.height * 0.96);
         break;
         
       case 'view_scores':
