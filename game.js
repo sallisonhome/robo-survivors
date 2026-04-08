@@ -6019,6 +6019,10 @@ function startGame() {
     } catch(e) {}
   }
   resetGame();
+  // Clear ALL input flags so stale presses from menu don't trigger pause/dash/bomb
+  Input.endFrame();
+  Input.gpButtonsJust.fill(false);
+  Touch.endFrame();
   // Small delay so audio pipeline is fully ready before first real sound
   setTimeout(() => { SFX.gameStart(); }, 50);
 }
