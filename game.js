@@ -6327,7 +6327,7 @@ function init() {
       }
     }
     if (game.state === 'view_scores') {
-      if (Input.backPressed() || Input.wasPressed('Escape') || Input.confirmPressed() || Input.startPressed() || Input.mouseClicked || (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed)) {
+      if (Input.backPressed() || Input.wasPressed('Escape') || Input.mouseClicked || (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed)) {
         Input.mouseClicked = false; if (Touch.active) Touch.tapConsumed = true;
         game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0; SFX.menuNav();
       }
