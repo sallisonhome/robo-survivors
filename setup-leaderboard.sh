@@ -6,9 +6,18 @@
 
 set -e
 
-echo "=== [1/5] Installing Python dependencies ==="
-pip3 install fastapi uvicorn 2>/dev/null || pip install fastapi uvicorn
-echo "  ✓ FastAPI + Uvicorn installed"
+VENV_DIR="/var/www/robosurvivors/.venv"
+
+echo "=== [1/5] Installing Python dependencies (venv) ==="
+apt-get install -y python3-venv python3-full 2>/dev/null || true
+if [ ! -d "$VENV_DIR" ]; then
+    python3 -m venv "$VENV_DIR"
+    echo "  ✓ Created virtual environment at $VENV_DIR"
+else
+    echo "  ✓ Virtual environment already exists"
+fi
+"$VENV_DIR/bin/pip" install fastapi uvicorn
+echo "  ✓ FastAPI + Uvicorn installed in venv"
 
 echo ""
 echo "=== [2/5] Creating scores file ==="
@@ -31,7 +40,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/var/www/robosurvivors
-ExecStart=/usr/bin/python3 -m uvicorn leaderboard:app --host 127.0.0.1 --port 8090
+ExecStart=/var/www/robosurvivors/.venv/bin/uvicorn leaderboard:app --host 127.0.0.1 --port 8090
 Restart=always
 RestartSec=5
 
