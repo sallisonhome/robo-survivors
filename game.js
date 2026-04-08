@@ -4435,29 +4435,43 @@ function drawLevelUpUI(ctx) {
   const w = game.width;
   const h = game.height;
   
+  // Scale factor based on screen size (1.0 at 1280x720, smaller on phones)
+  const sc = Math.min(w / 1280, h / 720);
+  const scMin = Math.min(w, h);
+  
   // Dark overlay
   ctx.fillStyle = 'rgba(0,0,0,0.75)';
   ctx.fillRect(0, 0, w, h);
   
   // Title
   ctx.fillStyle = C.textCyan;
-  ctx.font = "bold 20px 'Press Start 2P', monospace";
+  const titleSz = Math.max(10, Math.floor(20 * sc));
+  ctx.font = `bold ${titleSz}px 'Press Start 2P', monospace`;
   ctx.textAlign = 'center';
-  ctx.fillText('LEVEL UP!', w / 2, 80);
-  ctx.font = "12px 'Press Start 2P', monospace";
+  ctx.fillText('LEVEL UP!', w / 2, h * 0.12);
+  const lvlSz = Math.max(6, Math.floor(12 * sc));
+  ctx.font = `${lvlSz}px 'Press Start 2P', monospace`;
   ctx.fillStyle = C.textWhite;
-  ctx.fillText(`Level ${game.player.level}`, w / 2, 110);
+  ctx.fillText(`Level ${game.player.level}`, w / 2, h * 0.17);
   
-  // Cards — responsive sizing for mobile
-  const maxCardW = isMobile ? Math.floor((w - 40) / levelUpOptions.length - 10) : 220;
-  const cardW = Math.min(220, maxCardW);
-  const cardH = isMobile ? Math.min(120, h * 0.35) : 120;
-  const gap = isMobile ? 8 : 20;
-  const totalW = levelUpOptions.length * cardW + (levelUpOptions.length - 1) * gap;
+  // Cards — fully responsive
+  const numCards = levelUpOptions.length;
+  const padding = Math.floor(w * 0.03);
+  const gap = Math.max(4, Math.floor(w * 0.01));
+  const availW = w - padding * 2 - gap * (numCards - 1);
+  const cardW = Math.min(220, Math.floor(availW / numCards));
+  const cardH = Math.min(Math.floor(h * 0.45), Math.max(60, Math.floor(120 * sc)));
+  const totalW = numCards * cardW + (numCards - 1) * gap;
   const startX = (w - totalW) / 2;
-  const cardY = h / 2 - cardH / 2;
+  const cardY = h * 0.5 - cardH / 2;
   
-  for (let i = 0; i < levelUpOptions.length; i++) {
+  // Font sizes based on card width
+  const nameSize = Math.max(5, Math.min(10, Math.floor(cardW / 16)));
+  const lvSize = Math.max(4, nameSize - 2);
+  const descSize = Math.max(4, Math.min(7, Math.floor(cardW / 22)));
+  const lineH = descSize + Math.max(2, Math.floor(descSize * 0.5));
+  
+  for (let i = 0; i < numCards; i++) {
     const opt = levelUpOptions[i];
     const cx = startX + i * (cardW + gap);
     const selected = i === levelUpSelection;
@@ -4477,49 +4491,50 @@ function drawLevelUpUI(ctx) {
     // Content
     ctx.textAlign = 'center';
     const midX = cx + cardW / 2;
+    const innerW = cardW - 10;
     
-    // Scale font sizes for mobile
-    const nameSize = isMobile ? Math.max(7, Math.floor(cardW / 22)) : 10;
-    const lvSize = isMobile ? Math.max(6, nameSize - 2) : 8;
-    const descSize = isMobile ? Math.max(5, nameSize - 3) : 7;
-    
-    // Name
+    // Name — truncate if too wide
     ctx.fillStyle = opt.legendary ? '#ffcc00' : C.textWhite;
     ctx.font = `bold ${nameSize}px 'Press Start 2P', monospace`;
-    ctx.fillText(opt.name, midX, cardY + 25);
+    let displayName = opt.name;
+    while (ctx.measureText(displayName).width > innerW && displayName.length > 3) {
+      displayName = displayName.slice(0, -1);
+    }
+    ctx.fillText(displayName, midX, cardY + Math.floor(cardH * 0.2));
     
     // Level
     if (opt.level > 0 && !opt.legendary) {
       ctx.fillStyle = opt.isNew ? '#44ff44' : C.textYellow;
       ctx.font = `${lvSize}px 'Press Start 2P', monospace`;
-      ctx.fillText(opt.isNew ? 'NEW' : `Lv ${opt.level}`, midX, cardY + 42);
+      ctx.fillText(opt.isNew ? 'NEW' : `Lv ${opt.level}`, midX, cardY + Math.floor(cardH * 0.38));
     }
     
-    // Description
+    // Description — word wrap within card bounds
     ctx.fillStyle = '#aaaaaa';
     ctx.font = `${descSize}px 'Press Start 2P', monospace`;
-    // Word wrap description
     const words = opt.desc.split(' ');
     let line = '';
-    let lineY = cardY + 62;
+    let lineY = cardY + Math.floor(cardH * 0.52);
+    const maxLineY = cardY + cardH - 5;
     for (const word of words) {
       const test = line + word + ' ';
-      if (ctx.measureText(test).width > cardW - 20) {
-        ctx.fillText(line.trim(), midX, lineY);
+      if (ctx.measureText(test).width > innerW) {
+        if (lineY <= maxLineY) ctx.fillText(line.trim(), midX, lineY);
         line = word + ' ';
-        lineY += 12;
+        lineY += lineH;
       } else {
         line = test;
       }
     }
-    if (line.trim()) ctx.fillText(line.trim(), midX, lineY);
+    if (line.trim() && lineY <= maxLineY) ctx.fillText(line.trim(), midX, lineY);
   }
   
   // Controls hint
+  const hintSz = Math.max(5, Math.floor(8 * sc));
   ctx.fillStyle = '#666666';
-  ctx.font = "8px 'Press Start 2P', monospace";
+  ctx.font = `${hintSz}px 'Press Start 2P', monospace`;
   ctx.textAlign = 'center';
-  ctx.fillText(Touch.active ? 'TAP A CARD TO SELECT' : (Input.gamepad ? 'STICK/D-PAD: SELECT    A: CONFIRM' : 'ARROWS: SELECT    ENTER: CONFIRM'), w / 2, h - 50);
+  ctx.fillText(Touch.active ? 'TAP A CARD TO SELECT' : (Input.gamepad ? 'STICK/D-PAD: SELECT    A: CONFIRM' : 'ARROWS: SELECT    ENTER: CONFIRM'), w / 2, h * 0.93);
 }
 
 // Called ONCE per frame, OUTSIDE the fixed timestep loop
