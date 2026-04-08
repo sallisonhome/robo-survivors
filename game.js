@@ -5126,24 +5126,34 @@ function drawAttractScores(ctx) {
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, w, h);
   
+  // Scale fonts based on screen width for mobile compatibility
+  const scale = Math.min(w / 1280, h / 720); // 1.0 at 1280px, smaller on phones
+  const titleSize = Math.max(12, Math.floor(48 * scale));
+  const colTitleSize = Math.max(8, Math.floor(27 * scale));
+  const entrySize = Math.max(5, Math.floor(18 * scale));
+  const emptySize = Math.max(6, Math.floor(18 * scale));
+  const headerYBase = Math.floor(100 * scale);
+  const startYBase = Math.floor(140 * scale);
+  const titleY = Math.floor(60 * scale);
+  
   // Title
   ctx.textAlign = 'center';
   ctx.fillStyle = C.textCyan;
-  ctx.font = "bold 48px 'Press Start 2P', monospace";
+  ctx.font = `bold ${titleSize}px 'Press Start 2P', monospace`;
   ctx.shadowColor = C.textCyan;
   ctx.shadowBlur = 10;
-  ctx.fillText('HIGH SCORES', w / 2, 60);
+  ctx.fillText('HIGH SCORES', w / 2, titleY);
   ctx.shadowBlur = 0;
   
   // Three columns: Daily | Weekly | All Time
   const titles = ["TODAY", "THIS WEEK", 'ALL TIME'];
   const titleColors = ['#44ff44', '#ffcc00', '#ff4444'];
   const colW = w / 3;
-  const headerY = 100;
-  const startY = 140;
-  // Calculate row height to fit 25 entries between startY and bottom (with room for "PRESS START")
-  const availableH = h * 0.90 - startY;
-  const rowH = Math.floor(availableH / 25);
+  const headerY = headerYBase;
+  const startY = startYBase;
+  // Calculate row height to fit 25 entries between startY and bottom
+  const availableH = h * 0.88 - startY;
+  const rowH = Math.max(entrySize + 2, Math.floor(availableH / 25));
   
   for (let col = 0; col < 3; col++) {
     const cx = colW * col + colW / 2;
@@ -5152,7 +5162,7 @@ function drawAttractScores(ctx) {
     // Column title
     ctx.textAlign = 'center';
     ctx.fillStyle = titleColors[col];
-    ctx.font = "bold 27px 'Press Start 2P', monospace";
+    ctx.font = `bold ${colTitleSize}px 'Press Start 2P', monospace`;
     ctx.shadowColor = titleColors[col];
     ctx.shadowBlur = 6;
     ctx.fillText(titles[col], cx, headerY);
@@ -5170,9 +5180,9 @@ function drawAttractScores(ctx) {
     
     if (scores.length === 0) {
       ctx.fillStyle = '#444444';
-      ctx.font = "18px 'Press Start 2P', monospace";
-      ctx.fillText('NO SCORES', cx, startY + 80);
-      ctx.fillText('YET', cx, startY + 110);
+      ctx.font = `${emptySize}px 'Press Start 2P', monospace`;
+      ctx.fillText('NO SCORES', cx, startY + Math.floor(80 * scale));
+      ctx.fillText('YET', cx, startY + Math.floor(110 * scale));
       continue;
     }
     
@@ -5188,7 +5198,7 @@ function drawAttractScores(ctx) {
       const isTop = i === 0;
       
       ctx.fillStyle = isTop ? titleColors[col] : (i < 3 ? '#dddddd' : '#aaaaaa');
-      ctx.font = `${isTop ? 'bold ' : ''}18px 'Press Start 2P', monospace`;
+      ctx.font = `${isTop ? 'bold ' : ''}${entrySize}px 'Press Start 2P', monospace`;
       if (isTop) {
         ctx.shadowColor = titleColors[col];
         ctx.shadowBlur = 5;
@@ -5216,11 +5226,13 @@ function drawAttractScores(ctx) {
     const pressAlpha = 0.3 + Math.sin(t * Math.PI) * 0.5;
     ctx.globalAlpha = pressAlpha;
     ctx.fillStyle = C.textWhite;
-    ctx.font = "24px 'Press Start 2P', monospace";
+    const bottomSize = Math.max(8, Math.floor(24 * scale));
+    const hintSize = Math.max(5, Math.floor(10 * scale));
+    ctx.font = `${bottomSize}px 'Press Start 2P', monospace`;
     ctx.fillText(Input.gamepad ? 'PRESS START' : 'PRESS ENTER', w / 2, h * 0.94);
     ctx.globalAlpha = 0.5;
     ctx.fillStyle = '#666666';
-    ctx.font = "10px 'Press Start 2P', monospace";
+    ctx.font = `${hintSize}px 'Press Start 2P', monospace`;
     ctx.fillText(Input.gamepad ? 'B: BACK TO MENU' : 'ESC / CLICK: BACK TO MENU', w / 2, h * 0.98);
     ctx.globalAlpha = 1;
   }
