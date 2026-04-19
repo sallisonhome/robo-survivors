@@ -4680,6 +4680,11 @@ function drawTitleScreen(ctx) {
   ctx.font = "7px 'Press Start 2P', monospace";
   ctx.fillText(Touch.active ? 'TAP SCREEN TO START' : (Input.gamepad ? 'D-PAD/STICK: SELECT    A: CONFIRM' : 'UP/DOWN: SELECT    ENTER: CONFIRM'), w / 2, menuY + menuItems.length * 30 + 20);
   
+  // Copyright notice
+  ctx.fillStyle = '#333333';
+  ctx.font = "6px 'Press Start 2P', monospace";
+  ctx.fillText('\u00A9 2026 HALFBAKEDGAMES', w / 2, h - 12);
+  
 }
 
 // Demo scene state
