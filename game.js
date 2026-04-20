@@ -4678,7 +4678,7 @@ function drawTitleScreen(ctx) {
   // Controls hint
   ctx.fillStyle = '#444444';
   ctx.font = "7px 'Press Start 2P', monospace";
-  ctx.fillText(Touch.active ? 'TAP SCREEN TO START' : (Input.gamepad ? 'D-PAD/STICK: SELECT    A: CONFIRM' : 'UP/DOWN: SELECT    ENTER: CONFIRM'), w / 2, menuY + menuItems.length * 30 + 20);
+  ctx.fillText(Touch.active ? 'TAP TO SELECT' : (Input.gamepad ? 'D-PAD/STICK: SELECT    A: CONFIRM' : 'UP/DOWN: SELECT    ENTER: CONFIRM'), w / 2, menuY + menuItems.length * 30 + 20);
   
   // Copyright notice
   ctx.fillStyle = '#333333';
@@ -6253,9 +6253,20 @@ function init() {
     // ---- PER-FRAME MENU INPUT (title, pause, gameover, postgame, view_scores) ----
     // Runs outside tick loop for instant 1:1 response on button press
     if (game.state === 'title' && game.attractPhase === 0) {
-      // Touch: tap to start
+      // Touch: tap on menu items (same hitboxes as mouse click)
       if (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed) {
-        Touch.tapConsumed = true; startGame();
+        const menuY = game.height * 0.52;
+        let touchHandled = false;
+        for (let mi = 0; mi < 3; mi++) {
+          if (Touch.consumeTap(0, menuY + mi * 30 - 15, game.width, 30)) {
+            if (mi === 0) { startGame(); }
+            else if (mi === 1) { game.state = 'view_scores'; game.attractTimer = 0; fetchGlobalScores(); SFX.menuConfirm(); }
+            else if (mi === 2) { game.state = 'controls'; buildControlsMenuItems(); controlsMenu.selection = 3; SFX.menuConfirm(); }
+            touchHandled = true;
+            break;
+          }
+        }
+        if (!touchHandled) { Touch.tapConsumed = true; }
       }
       // Mouse click on menu items
       if (Input.mouseClicked) {
@@ -6336,8 +6347,10 @@ function init() {
       }
     }
     if (game.state === 'postgame_scores') {
-      // B / Esc = return to main menu
-      if (Input.backPressed() || Input.wasPressed('Escape')) {
+      // B / Esc / Touch / Click = return to main menu
+      if (Input.backPressed() || Input.wasPressed('Escape') || Input.mouseClicked ||
+          (Touch.active && Touch.tapX >= 0 && !Touch.tapConsumed)) {
+        Input.mouseClicked = false; if (Touch.active) Touch.tapConsumed = true;
         game.state = 'title'; game.attractPhase = 0; game.attractTimer = 0;
         game.titleMenuSelection = 0;
       }
@@ -6463,7 +6476,7 @@ function init() {
         ctx.textAlign = 'center';
         ctx.fillStyle = '#666666';
         ctx.font = `${Math.max(6, Math.floor(10 * Math.min(game.width/1280, game.height/720)))}px 'Press Start 2P', monospace`;
-        ctx.fillText(Input.gamepad ? 'B: MENU    START: NEW GAME' : 'ESC: MENU', game.width / 2, game.height * 0.96);
+        ctx.fillText(Touch.active ? 'TAP TO RETURN TO MENU' : (Input.gamepad ? 'B: MENU    START: NEW GAME' : 'ESC: MENU'), game.width / 2, game.height * 0.96);
         break;
         
       case 'view_scores':
