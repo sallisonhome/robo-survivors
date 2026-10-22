@@ -28,6 +28,12 @@ These rules apply to ROBO SURVIVORS and every related build (web, CrazyGames, St
 - After any correction from me, log the pattern in `tasks/lessons.md` and (if it's a permanent rule) update this CLAUDE.md.
 - Review this file at session start for ROBO SURVIVORS work.
 
+### 6. Deploying robosurvivors.com
+- Deploy only after the user approves and the PR is merged, from the cloud workspace: `gh workflow run deploy.yml -R sallisonhome/robo-survivors --ref main`, then watch the run and read its log with `gh run view <id> -R sallisonhome/robo-survivors --log`.
+- The deploy key can only run `/usr/local/sbin/robo-deploy` (git pull, then `deploy/deploy.sh`), which auto-rolls back on failure.
+- The Droplet (104.236.239.46, `saber-apps-suite`) is shared with the Saber Intelligence Suite: touch only the robosurvivors Nginx site and the `robo-leaderboard` service, and re-check `http://104.236.239.46/` + `/signal/` after deploys.
+- Admin portal: `https://robosurvivors.com/admin/`. Password hash is in the `ADMIN_PASSWORD_HASH` GitHub secret only — never in the repo.
+
 <!-- END PROJECT NON-NEGOTIABLES -->
 
 <!-- BEGIN PRINCIPLES PROMPT COPY -->
