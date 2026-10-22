@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>ROBO SURVIVORS — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #07080d; --panel: #10131c; --panel2: #161a26; --line: #232838;
+    --text: #e6e8ef; --muted: #8b91a5; --cyan: #3ee8ff; --magenta: #ff3ea5;
+    --yellow: #ffd23e; --green: #4dff88; --red: #ff5a5a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 Inter, system-ui, sans-serif; }
+  .pixel { font-family: 'Press Start 2P', monospace; letter-spacing: .5px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    padding: 16px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 14px; margin: 0; color: var(--cyan); }
+  header h1 span { color: var(--magenta); }
+  .tabs { display: flex; gap: 6px; }
+  .tabs button, .btn { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    padding: 7px 12px; border-radius: 6px; cursor: pointer; font: 500 13px Inter, sans-serif; }
+  .tabs button.on { background: var(--cyan); color: #001018; border-color: var(--cyan); }
+  .btn:hover, .tabs button:hover { border-color: var(--cyan); }
+  main { padding: 20px 24px 48px; max-width: 1400px; margin: 0 auto; }
+  .note { color: var(--muted); font-size: 12px; margin: 0 0 16px; }
+  h2 { font-size: 10px; color: var(--yellow); margin: 28px 0 12px; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  .card .label { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
+  .card .value { font: 700 26px Inter, sans-serif; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .tip { cursor: help; color: #555c72; border: 1px solid #333a4d; border-radius: 50%;
+    width: 15px; height: 15px; font-size: 10px; display: inline-flex; align-items: center; justify-content: center; }
+  .row2 { display: grid; gap: 12px; grid-template-columns: 2fr 1fr; }
+  .row3 { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+  @media (max-width: 900px) { .row2 { grid-template-columns: 1fr; } }
+  @media (max-width: 600px) {
+    header, main { padding-left: 14px; padding-right: 14px; }
+    .grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+    .card { padding: 12px; } .card .value { font-size: 21px; }
+    .tabs button, .btn { padding: 7px 10px; }
+  }
+  .chartbox { position: relative; height: 280px; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  td { padding: 6px 2px; border-bottom: 1px solid var(--line); }
+  td:last-child { text-align: right; color: var(--muted); }
+  td .bar { height: 4px; background: var(--cyan); border-radius: 2px; margin-top: 4px; opacity: .7; }
+  .empty { color: var(--muted); font-size: 13px; padding: 8px 0; }
+  #login { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+  #login form { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 32px; width: min(360px, 92vw); text-align: center; }
+  #login h1 { font-size: 13px; color: var(--cyan); margin: 0 0 6px; line-height: 1.8; }
+  #login p { color: var(--muted); margin: 0 0 20px; font-size: 13px; }
+  #login input { width: 100%; padding: 11px 12px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--bg); color: var(--text); font-size: 15px; margin-bottom: 12px; }
+  #login input:focus { outline: 2px solid var(--cyan); border-color: transparent; }
+  #login button { width: 100%; padding: 11px; border-radius: 8px; border: 0; background: var(--cyan);
+    color: #001018; font: 700 14px Inter, sans-serif; cursor: pointer; }
+  #err { color: var(--red); min-height: 20px; font-size: 13px; margin-top: 10px; }
+  .hidden { display: none !important; }
+  .actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #trackState { font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<section id="login">
+  <form id="loginForm" autocomplete="off">
+    <h1 class="pixel">ROBO SURVIVORS<br>ADMIN</h1>
+    <p>Visits, sessions and engagement</p>
+    <input id="pw" type="password" placeholder="Password" aria-label="Password" autofocus>
+    <button type="submit">Sign in</button>
+    <div id="err" role="alert"></div>
+  </form>
+</section>
+
+<section id="app" class="hidden">
+  <header>
+    <h1 class="pixel">ROBO <span>SURVIVORS</span> ADMIN</h1>
+    <div class="tabs" id="tabs">
+      <button data-r="24h">24h</button><button data-r="7d" class="on">7 days</button>
+      <button data-r="30d">30 days</button><button data-r="all">All time</button>
+    </div>
+    <div class="actions">
+      <span id="trackState"></span>
+      <button class="btn" id="trackBtn"></button>
+      <button class="btn" id="refresh">Refresh</button>
+      <button class="btn" id="logout">Sign out</button>
+    </div>
+  </header>
+  <main>
+    <p class="note" id="meta"></p>
+
+    <h2 class="pixel">TRAFFIC</h2>
+    <div class="grid" id="kTraffic"></div>
+
+    <h2 class="pixel">ENGAGEMENT</h2>
+    <div class="grid" id="kEngage"></div>
+
+    <h2 class="pixel">GAMEPLAY</h2>
+    <div class="grid" id="kPlay"></div>
+
+    <h2 class="pixel">RETENTION</h2>
+    <div class="grid" id="kRet"></div>
+
+    <h2 class="pixel">DAILY TREND</h2>
+    <div class="row2">
+      <div class="card"><div class="chartbox"><canvas id="cDaily"></canvas></div></div>
+      <div class="card"><div class="label">How far runs get (wave reached)</div>
+        <div class="chartbox"><canvas id="cWaves"></canvas></div></div>
+    </div>
+
+    <h2 class="pixel">BREAKDOWNS</h2>
+    <div class="row3" id="breakdowns"></div>
+
+    <h2 class="pixel">HISTORY FROM SERVER LOGS</h2>
+    <p class="note">Page loads imported from the Nginx access logs (bots and asset requests removed). Covers only what the Droplet's log retention kept, and these numbers come from server logs, not in-game tracking, so they aren't directly comparable with the figures above.</p>
+    <div class="grid" id="kHist"></div>
+    <div class="row3" id="histBreak" style="margin-top:12px"></div>
+  </main>
+</section>
+
+<script>
+const $ = s => document.querySelector(s);
+let range = '7d', charts = {};
+
+const fmtN = n => n == null ? '—' : Number(n).toLocaleString('en-US');
+const fmtPct = n => n == null ? '—' : n.toFixed(1) + '%';
+const fmtDur = s => {
+  if (s == null) return '—';
+  s = Math.round(s);
+  if (s < 60) return s + 's';
+  const m = Math.floor(s / 60), r = s % 60;
+  if (m < 60) return m + 'm ' + String(r).padStart(2, '0') + 's';
+  return Math.floor(m / 60) + 'h ' + (m % 60) + 'm';
+};
+const fmtDate = ms => ms ? new Date(ms).toLocaleString('en-US', { timeZone: 'America/New_York',
+  month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' ET' : '—';
+
+function card(label, value, sub, tip) {
+  return `<div class="card"><div class="label">${label}${tip ? ` <span class="tip" title="${tip}">?</span>` : ''}</div>
+    <div class="value">${value}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
+}
+function table(title, pairs, labelMap) {
+  const total = pairs.reduce((a, [, v]) => a + v, 0);
+  if (!total) return `<div class="card"><div class="label">${title}</div><div class="empty">No data yet</div></div>`;
+  const rows = pairs.map(([k, v]) => `<tr><td>${(labelMap && labelMap[k]) || k}
+    <div class="bar" style="width:${(100 * v / total).toFixed(1)}%"></div></td>
+    <td>${fmtN(v)} · ${(100 * v / total).toFixed(0)}%</td></tr>`).join('');
+  return `<div class="card"><div class="label">${title}</div><table>${rows}</table></div>`;
+}
+const sortObj = o => Object.entries(o || {}).sort((a, b) => b[1] - a[1]);
+
+async function api(path, opts) {
+  const r = await fetch(path, Object.assign({ credentials: 'same-origin' }, opts));
+  if (r.status === 401) { showLogin(); throw new Error('auth'); }
+  return r;
+}
+
+function showLogin() { $('#app').classList.add('hidden'); $('#login').classList.remove('hidden'); $('#pw').focus(); }
+function showApp() { $('#login').classList.add('hidden'); $('#app').classList.remove('hidden'); load(); }
+
+$('#loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('#err').textContent = '';
+  const r = await fetch('/api/admin/login', { method: 'POST', credentials: 'same-origin',
+    headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ password: $('#pw').value }) });
+  if (r.ok) { $('#pw').value = ''; showApp(); }
+  else { const j = await r.json().catch(() => ({})); $('#err').textContent = j.detail || 'Sign-in failed'; }
+});
+$('#logout').onclick = async () => { await fetch('/api/admin/logout', { method: 'POST', credentials: 'same-origin' }); showLogin(); };
+$('#refresh').onclick = () => load();
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); range = b.dataset.r; load();
+});
+
+function renderTrack() {
+  const off = localStorage.getItem('rs_no_track') === '1';
+  $('#trackState').textContent = off ? 'This browser is excluded from stats' : 'This browser is counted in stats';
+  $('#trackBtn').textContent = off ? 'Include this browser' : 'Exclude this browser';
+}
+$('#trackBtn').onclick = () => {
+  if (localStorage.getItem('rs_no_track') === '1') localStorage.removeItem('rs_no_track');
+  else localStorage.setItem('rs_no_track', '1');
+  renderTrack();
+};
+
+async function load() {
+  renderTrack();
+  let d;
+  try { d = await (await api('/api/admin/stats?range=' + range)).json(); } catch (e) { return; }
+  const k = d.kpis, b = d.breakdowns, h = d.history;
+  $('#meta').textContent = `In-game tracking since ${fmtDate(d.tracking_started_at)} · updated ${fmtDate(d.generated_at)} · days are Eastern Time`;
+
+  $('#kTraffic').innerHTML = [
+    card('Visits', fmtN(k.visits), null, 'Page loads of the game'),
+    card('Sessions', fmtN(k.sessions), null, 'A session ends after 30 minutes of no activity in that tab'),
+    card('Unique visitors', fmtN(k.unique_visitors), null, 'Distinct anonymous browser IDs'),
+    card('New visitors', fmtN(k.new_visitors), null, 'First ever seen inside this date range'),
+    card('Returning visitors', fmtN(k.returning_visitors), null, 'First seen before this date range'),
+  ].join('');
+  $('#kEngage').innerHTML = [
+    card('Avg session length', fmtDur(k.avg_session_secs), 'median ' + fmtDur(k.median_session_secs), 'First to last event per session (heartbeat every 30s while the tab is visible)'),
+    card('Sessions that played', fmtPct(k.engaged_session_pct), null, 'Share of sessions that started at least one run'),
+    card('Runs per playing session', k.runs_per_engaged_session ?? '—', null, 'Runs started ÷ sessions with at least one run'),
+    card('Runs started', fmtN(k.runs_started), fmtN(k.runs_finished) + ' ended'),
+  ].join('');
+  $('#kPlay').innerHTML = [
+    card('Avg run length', fmtDur(k.avg_run_secs), 'median ' + fmtDur(k.median_run_secs), 'In-game survival time per ended run'),
+    card('Median wave reached', k.median_wave ?? '—', 'best ' + (k.max_wave ?? '—')),
+    card('Runs reaching wave 5', fmtPct(k.reach_wave5_pct), 'wave 10+: ' + fmtPct(k.reach_wave10_pct)),
+    card('Median score', fmtN(k.median_score)),
+    card('High-score submits', fmtN(k.hs_submits), fmtPct(k.hs_submit_pct) + ' of ended runs'),
+  ].join('');
+  $('#kRet').innerHTML = [
+    card('Day-1 retention', fmtPct(k.d1_retention_pct), 'cohort ' + fmtN(k.d1_cohort) + ' visitors', 'Of visitors first seen on day D, the share who came back on day D+1. Based on all history, not the selected range.'),
+    card('7-day return rate', fmtPct(k.d7_retention_pct), 'cohort ' + fmtN(k.d7_cohort) + ' visitors', 'Of visitors whose first 7 days have passed, the share who came back on any of days 1 to 7. Based on all history.'),
+  ].join('');
+
+  const reasonLbl = { death: 'Player died', humans_lost: 'All humans lost', quit: 'Quit to menu', abandon: 'Closed tab mid-run', unknown: 'Unknown' };
+  const inputLbl = { keyboard: 'Keyboard / mouse', touch: 'Touch', gamepad: 'Gamepad' };
+  $('#breakdowns').innerHTML = [
+    table('Device (visits)', sortObj(b.device)),
+    table('Orientation at load', sortObj(b.orientation)),
+    table('Input used (runs)', sortObj(b.input), inputLbl),
+    table('How runs ended', sortObj(b.run_end_reason), reasonLbl),
+    table('Top referrers (visits)', b.referrers || []),
+  ].join('');
+
+  const cov = h.log_coverage || {};
+  $('#kHist').innerHTML = [
+    card('Page views (logs)', fmtN(h.log_page_views), null, 'Inside the selected range'),
+    card('Unique visitors (logs)', fmtN(h.log_unique_visitors), null, 'Unique per day: a salted hash of IP + user agent + day. Raw IPs are never stored.'),
+    card('Log coverage', cov.rows ? fmtN(cov.rows) + ' views' : '—', cov.from ? fmtDate(cov.from).replace(/,? \d+:\d+.*$/, '') + ' → ' + fmtDate(cov.to).replace(/,? \d+:\d+.*$/, '') : 'Not imported yet'),
+  ].join('');
+  $('#histBreak').innerHTML = table('Top referrers (logs)', h.log_referrers || []);
+
+  drawCharts(d);
+}
+
+function drawCharts(d) {
+  Chart.defaults.color = '#8b91a5';
+  Chart.defaults.borderColor = '#232838';
+  Chart.defaults.font.family = 'Inter, sans-serif';
+  const s = d.series || [];
+  const labels = s.map(x => { const [y, m, dd] = x.day.split('-'); return `${Number(m)}/${Number(dd)}`; });
+  charts.daily && charts.daily.destroy();
+  charts.daily = new Chart($('#cDaily'), {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: 'Visits', data: s.map(x => x.visits), borderColor: '#3ee8ff', backgroundColor: '#3ee8ff22', fill: true, cubicInterpolationMode: 'monotone' },
+      { label: 'Unique visitors', data: s.map(x => x.visitors), borderColor: '#ffd23e', cubicInterpolationMode: 'monotone' },
+      { label: 'Runs', data: s.map(x => x.runs), borderColor: '#4dff88', cubicInterpolationMode: 'monotone' },
+      { label: 'Page views (logs)', data: s.map(x => x.log_views), borderColor: '#ff3ea5', borderDash: [5, 4], cubicInterpolationMode: 'monotone' },
+    ] },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } },
+      plugins: { legend: { labels: { boxWidth: 12 } } } },
+  });
+  const wb = d.breakdowns.wave_buckets || [];
+  charts.waves && charts.waves.destroy();
+  charts.waves = new Chart($('#cWaves'), {
+    type: 'bar',
+    data: { labels: wb.map(x => 'Wave ' + x[0]), datasets: [{ label: 'Runs', data: wb.map(x => x[1]), backgroundColor: '#ff3ea5' }] },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+  });
+}
+
+fetch('/api/admin/me', { credentials: 'same-origin' }).then(r => r.ok ? showApp() : showLogin()).catch(showLogin);
+</script>
+</body>
+</html>
