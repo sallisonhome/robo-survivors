@@ -1,0 +1,40 @@
+name: Deploy to Droplet
+
+# Manual only — never deploys on push. Trigger after approval with:
+#   gh workflow run deploy.yml -R sallisonhome/robo-survivors
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: droplet-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Deploy via restricted SSH key
+        env:
+          SSH_KEY: ${{ secrets.DROPLET_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DROPLET_KNOWN_HOSTS }}
+          ADMIN_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The key is restricted server-side to run /usr/local/sbin/robo-deploy only.
+          # The admin password hash is passed on stdin, never as an argument or in logs.
+          printf '%s\n' "$ADMIN_HASH" | ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes root@104.236.239.46
+
+      - name: Verify from outside
+        run: |
+          set -euo pipefail
+          c() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          test "$(c https://robosurvivors.com/)" = 200
+          test "$(c https://robosurvivors.com/admin/)" = 200
+          test "$(c https://robosurvivors.com/api/admin/stats)" = 401
+          test "$(c https://robosurvivors.com/.git/HEAD)" = 404
+          echo "External checks passed"

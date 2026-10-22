@@ -1349,6 +1349,7 @@ function damagePlayer(amount) {
 }
 
 function triggerGameEnd() {
+  Analytics.runEnd(game.gameOverReason || 'death');
   // Start the single shared 20-second countdown
   game.attractReturnTimer = 20;
   
@@ -4683,6 +4684,7 @@ function drawTitleScreen(ctx) {
   // Copyright notice
   ctx.fillStyle = '#333333';
   ctx.font = "6px 'Press Start 2P', monospace";
+  ctx.fillText('ANONYMOUS PLAY STATS ONLY - NO PERSONAL DATA', w / 2, h - 24);
   ctx.fillText('\u00A9 2026 HALFBAKEDGAMES', w / 2, h - 12);
   
 }
@@ -5752,6 +5754,116 @@ function updateHighScoreEntry(dt) {
   }
 }
 
+// ---- FIRST-PARTY ANALYTICS (robosurvivors.com admin portal) ----
+// Anonymous only: random visitor id (localStorage) + per-tab session id (sessionStorage).
+// No cookies, no IP/fingerprinting, no third parties. Never throws into the game.
+// Opt out on a device with localStorage 'rs_no_track' = '1' (the admin portal sets it).
+const Analytics = (() => {
+  const ENDPOINT = '/api/events';
+  const SESSION_GAP_MS = 30 * 60 * 1000;
+  const HEARTBEAT_MS = 30 * 1000;
+  let vid = null, sid = null, queue = [], enabled = false, runActive = false, runStartedAt = 0;
+  let base = {};
+
+  function rid() {
+    const a = new Uint8Array(12);
+    (window.crypto || window.msCrypto).getRandomValues(a);
+    return Array.from(a, b => b.toString(36).padStart(2, '0')).join('').slice(0, 20);
+  }
+  function store(name) { try { return window[name]; } catch (e) { return null; } }
+
+  function device() {
+    const touch = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+    const ua = navigator.userAgent || '';
+    if (/iPad|Tablet/i.test(ua) || (touch && /Macintosh/.test(ua))) return 'tablet';
+    if (/Mobi|Android|iPhone|iPod/i.test(ua)) return 'mobile';
+    if (touch && Math.min(screen.width, screen.height) >= 600 && !/Windows|X11/.test(ua)) return 'tablet';
+    return 'desktop';
+  }
+  function orient() { return window.innerHeight > window.innerWidth ? 'portrait' : 'landscape'; }
+
+  function push(type, d) {
+    if (!enabled) return;
+    queue.push({ type, d: d || {}, t: Date.now() });
+    touchSession();
+  }
+  function touchSession() {
+    const ss = store('sessionStorage');
+    try { if (ss) ss.setItem('rs_sid_seen', String(Date.now())); } catch (e) {}
+  }
+  function flush(useBeacon) {
+    if (!enabled || queue.length === 0) return;
+    const now = Date.now();
+    const batch = queue.splice(0, 40).map(e => ({ type: e.type, d: e.d, age: now - e.t }));
+    const body = JSON.stringify(Object.assign({}, base, { orient: orient(), events: batch }));
+    try {
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon(ENDPOINT, new Blob([body], { type: 'text/plain' }));
+      } else {
+        fetch(ENDPOINT, { method: 'POST', body, keepalive: true,
+          headers: { 'Content-Type': 'text/plain' } }).catch(() => {});
+      }
+    } catch (e) { /* analytics must never affect gameplay */ }
+  }
+
+  function init() {
+    try {
+      const ls = store('localStorage'), ss = store('sessionStorage');
+      if (ls && ls.getItem('rs_no_track') === '1') return;
+      if (!/^(www\.)?robosurvivors\.(com|org)$/.test(location.hostname) &&
+          !/[?&]rs_track=1\b/.test(location.search)) return; // only live site (or explicit QA flag)
+      let returning = false;
+      vid = ls && ls.getItem('rs_vid');
+      if (vid) returning = true; else { vid = rid(); if (ls) ls.setItem('rs_vid', vid); }
+      sid = ss && ss.getItem('rs_sid');
+      const seen = Number(ss && ss.getItem('rs_sid_seen')) || 0;
+      const newSession = !sid || Date.now() - seen > SESSION_GAP_MS;
+      if (newSession) { sid = rid(); if (ss) ss.setItem('rs_sid', sid); }
+      base = { vid, sid, device: device(), ref: document.referrer || '' };
+      enabled = true;
+      if (newSession) push('session_start');
+      push('visit', { returning });
+      flush(false);
+      setInterval(() => {
+        if (document.visibilityState !== 'visible') return;
+        if (runActive && typeof game !== 'undefined' && game.state === 'title') runEnd('quit');
+        push('heartbeat', { playing: runActive });
+        flush(false);
+      }, HEARTBEAT_MS);
+      // Detect quit-to-title promptly (not just on the 30s heartbeat)
+      setInterval(() => {
+        if (runActive && typeof game !== 'undefined' && game.state === 'title') { runEnd('quit'); flush(false); }
+      }, 1000);
+      window.addEventListener('pagehide', () => { if (runActive) runEnd('abandon'); flush(true); });
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(true); });
+    } catch (e) { enabled = false; }
+  }
+
+  function runStart() {
+    if (!enabled) return;
+    if (runActive) runEnd('quit');
+    runActive = true; runStartedAt = Date.now();
+    const input = (typeof Touch !== 'undefined' && Touch.active) ? 'touch'
+      : (typeof Input !== 'undefined' && Input.gamepad) ? 'gamepad' : 'keyboard';
+    push('run_start', { input });
+    flush(false);
+  }
+  function runEnd(reason) {
+    if (!enabled || !runActive) return;
+    runActive = false;
+    const p = (typeof game !== 'undefined' && game.player) || {};
+    push('run_end', {
+      reason, score: p.score || 0, wave: game.wave || 0, level: p.level || 1,
+      secs: Math.floor(game.runTime || (Date.now() - runStartedAt) / 1000),
+      kills: p.totalKills || 0, rescues: p.totalRescues || 0,
+    });
+    flush(reason === 'abandon');
+  }
+  function hsSubmit(score, wave) { push('hs_submit', { score, wave }); flush(false); }
+
+  return { init, runStart, runEnd, hsSubmit };
+})();
+
 // ---- GLOBAL LEADERBOARD API ----
 const LEADERBOARD_API = '/api/scores';
 
@@ -5818,6 +5930,7 @@ function submitHighScore() {
   
   // Submit to global leaderboard API (async, non-blocking)
   submitScoreToAPI(entry);
+  Analytics.hsSubmit(entry.score, entry.wave);
   
   if (game.player.score > game.sessionHigh) game.sessionHigh = game.player.score;
   
@@ -6029,6 +6142,7 @@ function startGame() {
     } catch(e) {}
   }
   resetGame();
+  Analytics.runStart();
   // Clear ALL input flags so stale presses from menu don't trigger pause/dash/bomb
   Input.endFrame();
   Input.gpButtonsJust.fill(false);
@@ -6076,6 +6190,7 @@ function init() {
   
   game.state = 'title';
   game.attractTimer = 0;
+  Analytics.init();
   
   // Start game loop
   let lastTime = 0;

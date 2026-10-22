@@ -1,3 +1,34 @@
+<!-- BEGIN PROJECT NON-NEGOTIABLES -->
+
+## ROBO SURVIVORS — Non-Negotiable Working Rules
+
+These rules apply to ROBO SURVIVORS and every related build (web, CrazyGames, Steam). They override anything below if there's ever a conflict. Established 2026-05-27.
+
+### 1. Never Guess About the App
+- Before stating how anything in the game works, **verify** by reading the relevant code, running it, or asking.
+- Do not infer behavior from filenames, function names, or screenshots alone.
+- If unsure, say "let me check" — then check.
+
+### 2. QA Every Change Before Deploying
+- Every code change must be validated with **Playwright** (or appropriate testing) before any deploy or push.
+- Mobile changes must be tested in mobile viewport with touch events, not just desktop.
+- Take screenshots and visually verify state transitions — don't trust that "it should work."
+
+### 3. PRs Per Feature, Never Direct to `main`
+- Each new feature gets its own branch and PR. Do not commit features directly to `main`.
+- Bug fixes for live issues may go to a `fix/` branch and merge via PR.
+- I (the user) review and merge the PR after Computer presents the QA evidence.
+
+### 4. Confirm Deploys and Significant Changes
+- Before deploying to the preview site, pushing to GitHub, or telling me to update the Droplet: **confirm with me first**.
+- Show me a summary of what changed and the QA evidence, then wait for approval.
+- Exception: trivial doc/comment edits or rolling back a clearly-broken change.
+
+### 5. Self-Improvement
+- After any correction from me, log the pattern in `tasks/lessons.md` and (if it's a permanent rule) update this CLAUDE.md.
+- Review this file at session start for ROBO SURVIVORS work.
+
+<!-- END PROJECT NON-NEGOTIABLES -->
 
 <!-- BEGIN PRINCIPLES PROMPT COPY -->
 

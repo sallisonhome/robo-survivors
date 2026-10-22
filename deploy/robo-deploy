@@ -1,0 +1,13 @@
+#!/bin/bash
+# Installed at /usr/local/sbin/robo-deploy by the one-time setup.
+# It is the SSH forced command for the GitHub Actions deploy key: that key can run this and nothing else.
+set -euo pipefail
+cd /var/www/robosurvivors
+PREV=$(git rev-parse HEAD)
+echo "=== [pull] current: $PREV"
+git fetch --quiet origin main
+if ! git merge --ff-only --quiet origin/main; then
+  echo "✗ Droplet checkout has local changes or diverged; not deploying."; git status --short; exit 1
+fi
+echo "=== [pull] now:     $(git rev-parse HEAD)"
+PREV_COMMIT="$PREV" exec bash deploy/deploy.sh

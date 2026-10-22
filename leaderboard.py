@@ -27,6 +27,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# First-party analytics + admin portal API (/api/events, /api/admin/*)
+from analytics import router as analytics_router  # noqa: E402
+app.include_router(analytics_router)
+
 # Storage
 SCORES_FILE = Path("/var/www/robosurvivors/scores.json")
 MAX_SCORES = 200  # keep more than displayed for daily/weekly filtering
