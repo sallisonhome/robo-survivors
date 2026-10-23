@@ -425,6 +425,7 @@ def compute_stats(range_key, now_ms=None):
             "returning_visitors": returning_visitors,
             "avg_session_secs": round(sum(durations) / len(durations), 1) if durations else None,
             "median_session_secs": _median(durations),
+            "gameplay_sessions": len(engaged),
             "engaged_session_pct": _pct(len(engaged), len(sessions)),
             "runs_started": run_starts,
             "runs_finished": len(runs),
