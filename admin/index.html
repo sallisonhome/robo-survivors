@@ -202,6 +202,7 @@ async function load() {
   $('#kTraffic').innerHTML = [
     card('Visits', fmtN(k.visits), null, 'Page loads of the game'),
     card('Sessions', fmtN(k.sessions), null, 'A session ends after 30 minutes of no activity in that tab'),
+    card('Gameplay sessions', fmtN(k.gameplay_sessions), fmtPct(k.engaged_session_pct) + ' of sessions', 'Sessions where at least one run was started'),
     card('Unique visitors', fmtN(k.unique_visitors), null, 'Distinct anonymous browser IDs'),
     card('New visitors', fmtN(k.new_visitors), null, 'First ever seen inside this date range'),
     card('Returning visitors', fmtN(k.returning_visitors), null, 'First seen before this date range'),
